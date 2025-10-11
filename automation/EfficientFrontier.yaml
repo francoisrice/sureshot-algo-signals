@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: incredibleleverage-efficientfrontier
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: incredibleleverage
+  template:
+    metadata:
+      labels:
+        app: incredibleleverage
+    spec:
+      containers:
+{{- $folders := .Files.Glob "IncredibleLeverage*/Dockerfile" }}
+{{- range $i, $file := $folders }}
+{{- $folder := (splitList "/" $file | first) }}
+      - name: {{ $folder | lower }}
+        image: {{ $folder | lower }}:latest
+        imagePullPolicy: IfNotPresent
+{{- end }}
