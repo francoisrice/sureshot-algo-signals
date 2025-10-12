@@ -1,7 +1,11 @@
 from collections import deque
 from datetime import datetime, timedelta
+import logging
 from typing import Optional, Union
 from .Polygon import PolygonClient
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class SMA:
     def __init__(self, symbol: str, period: int, timeframe: str = '1d'):
@@ -53,7 +57,7 @@ class SMA:
             self.is_initialized = True
 
         except Exception as e:
-            print(f"Warning: Could not initialize SMA with historical data: {e}")
+            logger.error(f" Could not initialize SMA with historical data: {e}")
             # Fall back to manual initialization
             self.is_initialized = True
 

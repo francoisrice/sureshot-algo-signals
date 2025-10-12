@@ -4,6 +4,7 @@ import logging
 from datetime import datetime
 from typing import Dict, List, Optional, Union, Tuple
 
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -67,13 +68,13 @@ class PolygonClient:
 
             data = response.json()
 
-            if data.get('status') == 'OK' and 'results' in data:
+            if 'results' in data:
                 return float(data['results']['p'])  # 'p' is price
 
             return None
 
         except Exception as e:
-            print(f"Error fetching current price from Polygon: {e}")
+            logger.error(f"Error fetching current price from Polygon: {e}")
             return None
 
     def get_historical_data(self,
@@ -125,14 +126,14 @@ class PolygonClient:
 
             data = response.json()
 
-            if data.get('status') == 'OK' and 'results' in data:
+            if 'results' in data:
                 return data['results']
             else:
-                print(f"Polygon API response: {data}")
+                logger.debug(f"Polygon API response: {data}")
                 return []
 
         except requests.RequestException as e:
-            print(f"Error fetching historical data from Polygon: {e}")
+            logger.error(f"Error fetching historical data from Polygon: {e}")
             return []
 
     def get_ohlcv_data(self,
@@ -206,13 +207,13 @@ class PolygonClient:
 
             data = response.json()
 
-            if data.get('status') == 'OK' and 'results' in data:
+            if 'results' in data:
                 return data['results']
 
             return None
 
         except Exception as e:
-            print(f"Error fetching last quote from Polygon: {e}")
+            logger.error(f"Error fetching last quote from Polygon: {e}")
             return None
 
     def is_market_open(self) -> bool:
@@ -237,7 +238,7 @@ class PolygonClient:
             return False
 
         except Exception as e:
-            print(f"Error checking market status from Polygon: {e}")
+            logger.error(f"Error checking market status from Polygon: {e}")
             # Fallback to basic time-based check
             now = datetime.now()
             # Simple check: weekday and rough market hours

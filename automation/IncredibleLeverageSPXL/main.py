@@ -21,7 +21,6 @@ class ilSPXLScheduler(Scheduler):
         # self.portfolio
         # self.cash , from portfolio algorithm
         self.sma.initialize()
-        pass
 
     def backtest_initialize(self):
         self.set_start_date(2010, 1, 1)  # Set Start Date
