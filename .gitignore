@@ -3,3 +3,9 @@ __pycache__/
 .env
 temp.txt
 thoughts.md
+
+automation/.venv
+automation/__pycache__/
+
+k8s/vault/vault-keys.json
+k8s/vault/VERIFICATION_REPORT.md

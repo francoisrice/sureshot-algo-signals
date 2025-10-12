@@ -1,0 +1,136 @@
+---
+# ServiceAccount for the application
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sureshot-algo
+  namespace: default
+---
+# Example deployment using Vault Agent Injector
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sureshot-algo-spxl
+  namespace: default
+  labels:
+    app: sureshot-algo-spxl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sureshot-algo-spxl
+  template:
+    metadata:
+      labels:
+        app: sureshot-algo-spxl
+      annotations:
+        # Vault annotations for secret injection
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: "sureshot-algo"
+        vault.hashicorp.com/agent-inject-secret-polygon: "secret/data/sureshot-algo/polygon"
+        vault.hashicorp.com/agent-inject-template-polygon: |
+          {{- with secret "secret/data/sureshot-algo/polygon" -}}
+          export POLYGON_API_KEY="{{ .Data.data.api_key }}"
+          {{- end -}}
+    spec:
+      serviceAccountName: sureshot-algo
+      containers:
+        - name: app
+          image: your-registry/sureshot-algo-spxl:latest
+          command: ["/bin/sh"]
+          args:
+            - "-c"
+            - |
+              # Source the Vault-injected secrets
+              source /vault/secrets/polygon
+              # Run your application
+              python /app/IncredibleLeverageSPXL/main.py
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          volumeMounts:
+            - name: app-code
+              mountPath: /app
+      volumes:
+        - name: app-code
+          # This would be your application code
+          emptyDir: {}
+---
+# Alternative: Using init container to fetch secrets and create env file
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sureshot-algo-spxl-init
+  namespace: default
+  labels:
+    app: sureshot-algo-spxl-init
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sureshot-algo-spxl-init
+  template:
+    metadata:
+      labels:
+        app: sureshot-algo-spxl-init
+    spec:
+      serviceAccountName: sureshot-algo
+      initContainers:
+        - name: vault-init
+          image: hashicorp/vault:1.15.2
+          command:
+            - "/bin/sh"
+            - "-c"
+            - |
+              # Login to Vault using Kubernetes auth
+              VAULT_TOKEN=$(vault write -field=token auth/kubernetes/login \
+                role=sureshot-algo \
+                jwt=@/var/run/secrets/kubernetes.io/serviceaccount/token)
+
+              export VAULT_TOKEN
+
+              # Fetch secrets and write to shared volume
+              vault kv get -field=api_key secret/sureshot-algo/polygon > /secrets/POLYGON_API_KEY
+
+              echo "Secrets fetched successfully"
+          env:
+            - name: VAULT_ADDR
+              value: "http://vault.vault.svc.cluster.local:8200"
+          volumeMounts:
+            - name: secrets
+              mountPath: /secrets
+      containers:
+        - name: app
+          image: your-registry/sureshot-algo-spxl:latest
+          command: ["/bin/sh"]
+          args:
+            - "-c"
+            - |
+              # Read secrets from shared volume
+              export POLYGON_API_KEY=$(cat /secrets/POLYGON_API_KEY)
+
+              # Run your application
+              python /app/IncredibleLeverageSPXL/main.py
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          volumeMounts:
+            - name: secrets
+              mountPath: /secrets
+              readOnly: true
+            - name: app-code
+              mountPath: /app
+      volumes:
+        - name: secrets
+          emptyDir:
+            medium: Memory
+        - name: app-code
+          emptyDir: {}

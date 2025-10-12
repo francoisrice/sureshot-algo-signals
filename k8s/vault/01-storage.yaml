@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vault-storage
+  namespace: vault
+  labels:
+    app: vault
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  # Uncomment and set storageClassName based on your cluster
+  storageClassName: microk8s-hostpath  # For microk8s
+  # storageClassName: standard
+  # storageClassName: gp2  # For AWS EKS
+  # storageClassName: pd-standard  # For GKE

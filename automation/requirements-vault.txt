@@ -1,0 +1,7 @@
+# HashiCorp Vault integration
+hvac>=1.2.0
+
+# Core dependencies
+requests>=2.25.0
+pytz>=2021.1
+typing-extensions>=4.0.0

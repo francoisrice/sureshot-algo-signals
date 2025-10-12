@@ -1,23 +1,49 @@
 import requests
 import os
+import logging
 from datetime import datetime
 from typing import Dict, List, Optional, Union, Tuple
+
+logger = logging.getLogger(__name__)
+
 
 class PolygonClient:
     """
     Polygon API client for fetching market data
+    Supports both environment variables and Vault for API key retrieval
     """
 
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: Optional[str] = None, use_vault: bool = False):
         """
         Initialize Polygon client
 
         Args:
-            api_key: Polygon API key. If None, will try to get from environment
+            api_key: Polygon API key. If None, will try to get from environment or Vault
+            use_vault: If True, attempt to fetch API key from Vault
         """
-        self.api_key = api_key or os.getenv('POLYGON_API_KEY')
+        self.api_key = api_key
+
+        if not self.api_key and use_vault:
+            # Try to get API key from Vault
+            try:
+                from ..vault_client import get_polygon_api_key_from_vault
+                self.api_key = get_polygon_api_key_from_vault()
+                if self.api_key:
+                    logger.info("Successfully retrieved Polygon API key from Vault")
+            except Exception as e:
+                logger.warning(f"Failed to retrieve API key from Vault: {e}")
+
         if not self.api_key:
-            raise ValueError("POLYGON_API_KEY environment variable is required")
+            # Fallback to environment variable
+            self.api_key = os.getenv('POLYGON_API_KEY')
+
+        if not self.api_key:
+            raise ValueError(
+                "POLYGON_API_KEY not found. Provide via:\n"
+                "  1. Constructor argument: PolygonClient(api_key='...')\n"
+                "  2. Environment variable: POLYGON_API_KEY\n"
+                "  3. Vault: PolygonClient(use_vault=True)"
+            )
 
         self.base_url = "https://api.polygon.io"
         self.session = requests.Session()
