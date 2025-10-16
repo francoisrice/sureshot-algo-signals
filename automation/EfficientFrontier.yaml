@@ -13,10 +13,73 @@ spec:
         app: incredibleleverage
     spec:
       containers:
-{{- $folders := .Files.Glob "IncredibleLeverage*/Dockerfile" }}
-{{- range $i, $file := $folders }}
-{{- $folder := (splitList "/" $file | first) }}
-      - name: {{ $folder | lower }}
-        image: {{ $folder | lower }}:latest
-        imagePullPolicy: IfNotPresent
-{{- end }}
+        - name: incredibleleverage-spxl
+          image: incredibleleverage:spxl
+          imagePullPolicy: Never
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "100Mi"
+            limits:
+              cpu: "100m"
+              memory: "100Mi"
+          env:
+            - name: NODE_ENV
+              value: "production"
+
+        - name: incredibleleverage-ptir
+          image: incredibleleverage:ptir
+          imagePullPolicy: Never
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "100Mi"
+            limits:
+              cpu: "100m"
+              memory: "100Mi"
+          env:
+            - name: NODE_ENV
+              value: "production"
+
+        - name: incredibleleverage-nvdl
+          image: incredibleleverage:nvdl
+          imagePullPolicy: Never
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "100Mi"
+            limits:
+              cpu: "100m"
+              memory: "100Mi"
+          env:
+            - name: NODE_ENV
+              value: "production"
+
+        - name: incredibleleverage-hood
+          image: incredibleleverage:hood
+          imagePullPolicy: Never
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "100Mi"
+            limits:
+              cpu: "100m"
+              memory: "100Mi"
+          env:
+            - name: NODE_ENV
+              value: "production"
+
+        - name: incredibleleverage-avl
+          image: incredibleleverage:avl
+          imagePullPolicy: Never
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "100Mi"
+            limits:
+              cpu: "100m"
+              memory: "100Mi"
+          env:
+            - name: NODE_ENV
+              value: "production"
+      restartPolicy: Always

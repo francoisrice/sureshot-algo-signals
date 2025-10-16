@@ -1,4 +1,5 @@
 FROM python:3.8-slim
+# FROM sureshotcapital/incredibleleverage:latest
 WORKDIR /app
 COPY /IncredibleLeverageSPXL/main.py /app/main.py
 COPY /SureshotSDK /app/SureshotSDK

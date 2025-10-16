@@ -11,3 +11,5 @@ k8s/vault/vault-keys.json
 k8s/vault/VERIFICATION_REPORT.md
 
 sureshot_automation.egg-info.example/
+
+strategies/
