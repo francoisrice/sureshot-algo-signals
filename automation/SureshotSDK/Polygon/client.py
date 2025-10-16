@@ -27,6 +27,7 @@ class PolygonClient:
         if not self.api_key and use_vault:
             # Try to get API key from Vault
             try:
+                # TODO: Fix this abomonation and move import to top of the file without breaking the import or the tests using it
                 from ..vault_client import get_polygon_api_key_from_vault
                 self.api_key = get_polygon_api_key_from_vault()
                 if self.api_key:
