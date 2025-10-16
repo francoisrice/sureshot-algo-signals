@@ -1,0 +1,13 @@
+# SureshotSDK Core Dependencies
+
+# API client
+requests>=2.31.0
+
+# Date/time utilities
+pytz>=2023.3
+
+# Type hints
+typing-extensions>=4.8.0
+
+# Optional: HashiCorp Vault integration
+# hvac>=1.2.0
