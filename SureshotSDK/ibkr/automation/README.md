@@ -2,7 +2,7 @@
 
 - Authenticate to the API
   1. Run `bin/run.sh root/conf.yaml` from `/ibkr`
-  2. From a separate process, run `python3 headless_auth.py`
+  2. From a separate process, run `python3 automation/headless_auth.py`
   3. You can now use the client or check auth
 
 Authentication must be done through a browser without a VPN, preferrably Chrome

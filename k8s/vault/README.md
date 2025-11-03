@@ -138,11 +138,13 @@ initContainers:
 ### Method 3: Python Client (HVAC)
 
 Install in your application:
+
 ```bash
 pip install hvac
 ```
 
 Python code:
+
 ```python
 import hvac
 import os
@@ -211,6 +213,7 @@ kubectl exec -n vault vault-0 -- tar xzf /tmp/vault-backup.tar.gz -C /
 ### 1. Enable TLS
 
 Update `02-configmap.yaml`:
+
 ```hcl
 listener "tcp" {
   tls_disable = 0
@@ -226,6 +229,7 @@ For production, consider running Vault in HA mode with Consul or Raft storage ba
 ### 3. Auto-Unseal
 
 Configure auto-unseal using cloud KMS:
+
 - AWS KMS
 - GCP Cloud KMS
 - Azure Key Vault
@@ -233,6 +237,7 @@ Configure auto-unseal using cloud KMS:
 ### 4. Monitoring
 
 Enable Prometheus metrics (already configured in the service):
+
 ```yaml
 annotations:
   prometheus.io/scrape: "true"
@@ -243,6 +248,7 @@ annotations:
 ### 5. Audit Logging
 
 Enable audit logging:
+
 ```bash
 vault audit enable file file_path=/vault/logs/audit.log
 ```
@@ -250,18 +256,21 @@ vault audit enable file file_path=/vault/logs/audit.log
 ## Troubleshooting
 
 ### Vault pod not starting
+
 ```bash
 kubectl logs -n vault vault-0
 kubectl describe pod -n vault vault-0
 ```
 
 ### Vault is sealed
+
 ```bash
 kubectl exec -n vault vault-0 -- vault status
 # If sealed=true, follow unsealing steps above
 ```
 
 ### Permission denied accessing secrets
+
 ```bash
 # Check the policy
 kubectl exec -n vault vault-0 -- vault policy read sureshot-algo-policy
@@ -271,6 +280,7 @@ kubectl exec -n vault vault-0 -- vault read auth/kubernetes/role/sureshot-algo
 ```
 
 ### Storage issues
+
 ```bash
 # Check PVC status
 kubectl get pvc -n vault

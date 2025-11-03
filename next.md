@@ -9,7 +9,15 @@
 - [x] Move SureshotSDK outside of automation
 - Live Trading
   - [x] Automate IBKR login <- will this work from a deployment cluster?
-  - **Place trades through IBKR and automate refreshing the connection**
+  - 1. **Test that orders are placed successfully with buy method**
+  - 2. Create methods to check positions in IBKR
+  - 3. Create tests around IBKR client
+    - If stop_loss returns first call as > 299
+    - If stop_loss returns 3 confirmation messages with field 'id'
+  - 4. Make sure trades can be placed end-to-end through IBKR client and TradingStrategy correctly and that refreshing the connection is automatic
+  - 5. ...Portfolio...
+  - 6. ...Run on server...
+- Used a centralized logging service across k8s cluster
 - Paper Trading
 
   - Create SQLite/PostgresQL client

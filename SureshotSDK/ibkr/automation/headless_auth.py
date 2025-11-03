@@ -15,7 +15,7 @@ if not loginB:
     errorMsg += ' password '
 if not loginC:
     errorMsg += ' otp secret '
-if errorMsg == 'Missing Auth Credentials:':
+if errorMsg != 'Missing Auth Credentials:':
     raise(Exception(errorMsg))
 
 headless=False
