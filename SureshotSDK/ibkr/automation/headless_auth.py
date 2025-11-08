@@ -57,6 +57,7 @@ def sync_login():
             page.wait_for_selector('text=Client login succeeds', timeout=5000)
             print("Login Successful")
             browser.close()
+            return "Login Successful"
         except:
             print("Login Failed")
             page.screenshot(path='Failed_Login.png')

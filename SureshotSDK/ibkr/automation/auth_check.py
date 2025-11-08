@@ -12,17 +12,14 @@ def confirm_auth():
     endpoint = '/iserver/auth/status'
 
     response = requests.get(url=f"{baseUrl}{endpoint}", verify=False)
-    print(response)
-    print(response.text)
+    logging.debug(response)
+    logging.debug(response.text)
 
-    # if response.status_code == 401:
-    #   reAuthenticate() -> Playwright; Click on https://localhost:5000/; login with credentials, make sure credentials are in ENV or Vault
-    # Snag Security Code from 2FA; 1password?
-    #   ...
+    return response
     
 if __name__ == "__main__":
     try:
-        confirm_auth()
+        logging.info(confirm_auth())
     except requests.exceptions.ConnectionError as e:
         logging.error('RUN BASH!!!')
         logging.error(e)

@@ -3,15 +3,73 @@ import json
 import urllib3
 import logging
 import os
+from .headless_auth import sync_login
+from .auth_check import confirm_auth
+# from SureshotSDK.ibkr.automation.headless_auth import sync_login
+# from SureshotSDK.ibkr.automation.auth_check import confirm_auth
 
 # Ignore insecure error messages
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # Get secrets from ENV or Vault
 
+class RetryClient:
+
+    def __init__(self):
+        pass
+
+    def auth_check(self):
+        resp = confirm_auth().status_code
+        return resp
+    
+    def reauthenticate(self):
+        login = sync_login()
+        if login == "Login Successful":
+            return True
+        else:
+            return False
+
+    def get(self,url,verify=False):
+        response = requests.get(url=url, verify=verify)
+        logger.debug(f"{url} GET Response: {response}")
+        if response.status_code > 299:
+            check = self.auth_check()
+            logger.debug(f"GET.Check: {check}")
+            if check > 299:
+                isAuthenticated = self.reauthenticate()
+                logger.debug(f"GET.isAuthenticated: {check}")
+                if isAuthenticated:
+                    response2 = requests.get(url=url, verify=False)
+                    logger.debug(f"GET Response #2: {check}")
+                    return response2
+                else:
+                    logger.error(f"ERROR : RetryClient.get('{url}') : IBKR headless reauthentication failed")
+            else:
+                return response
+        return response
+
+    def post(self,url,verify=False,json=None):
+        response = requests.post(url=url, verify=verify, json=json)
+        logger.debug(f"{url} POST Response: {response}")
+        if response.status_code > 299:
+            check = self.auth_check()
+            logger.debug(f"POST.Check: {check}")
+            if check > 299:
+                isAuthenticated = self.reauthenticate()
+                logger.debug(f"POST.isAuthenticated: {check}")
+                if isAuthenticated:
+                    response2 = requests.post(url=url, verify=False)
+                    logger.debug(f"POST Response #2: {check}")
+                    return response2
+                else:
+                    logger.error(f"ERROR : RetryClient.post('{url}') : IBKR headless reauthentication failed")
+            else:
+                return response
+        return response
+    
 class IBKRClient:
 
     account = os.environ['IBKR_ACCT_NUMBER']
@@ -19,7 +77,7 @@ class IBKRClient:
     endpoint = f'/iserver/account/{account}/orders'
 
     def __init__(self):
-        pass
+        self._client = RetryClient()
 
     def _get_conid_from_symbol(self):
         pass
@@ -36,12 +94,8 @@ class IBKRClient:
             }]
         }
 
-        resp = requests.post(url=f"{self.baseUrl}{self.endpoint}", verify=False, json=data)
+        resp = self._client.post(url=f"{self.baseUrl}{self.endpoint}", verify=False, json=data)
         respJSON = json.dumps(resp.json())
-
-        # If stale connection
-        #   Reauthenticate()
-        #   RepeatRequest()
 
         # If needs order_reply
         #   ibkr.order_reply(returned_id)
@@ -60,12 +114,8 @@ class IBKRClient:
             }]
         }
 
-        resp = requests.post(url=f"{self.baseUrl}{self.endpoint}", verify=False, json=data)
+        resp = self._client.post(url=f"{self.baseUrl}{self.endpoint}", verify=False, json=data)
         respJSON = json.dumps(resp.json())
-
-        # If stale connection
-        #   Reauthenticate()
-        #   RepeatRequest()
 
         # If needs order_reply
         #   ibkr.order_reply(returned_id)
@@ -85,12 +135,8 @@ class IBKRClient:
             }]
         }
 
-        resp = requests.post(url=f"{self.baseUrl}{self.endpoint}", verify=False, json=data)
+        resp = self._client.post(url=f"{self.baseUrl}{self.endpoint}", verify=False, json=data)
         respJSON = json.dumps(resp.json())
-
-        # If stale connection
-        #   Reauthenticate()
-        #   RepeatRequest()
 
         if resp.status_code >= 300:
             return json.loads('{"message":"Error: Stop Loss Request Failed"}')
@@ -104,10 +150,6 @@ class IBKRClient:
             orderId = orderJSON[0]['id']
             orderJSON = self.order_reply(orderId)
 
-            # If stale connection
-            #   Reauthenticate()
-            #   RepeatRequest()
-
             if 'id' not in orderJSON[0]:
                 orderStatus = 'Finished'
 
@@ -119,12 +161,8 @@ class IBKRClient:
 
         data = {"confirmed":True}
 
-        resp = requests.post(f'{self.baseUrl}{endpoint}{orderId}',verify=False, json=data)
+        resp = self._client.post(f'{self.baseUrl}{endpoint}{orderId}',verify=False, json=data)
         respJSON = json.dumps(resp.json())
-
-        # If stale connection
-        #   Reauthenticate()
-        #   RepeatRequest()
 
         if resp.status_code >= 300:
             return json.loads('[{"message":"Error: Stop Loss Request Failed"}]')
@@ -161,12 +199,11 @@ class IBKRClient:
         endpoint = f'/trsrv/stocks?symbols={symbol}'
 
         try:
-            resp = requests.get(url=f"{self.baseUrl}{endpoint}", verify=False)
+            resp = self._client.get(url=f"{self.baseUrl}{endpoint}", verify=False)
             logger.debug(f'RAW : fetch_conid : {resp.text}')
 
             respData = resp.json()
 
-            # Flatten all contracts from companies
             all_contracts = self._flatten_contracts_from_companies(respData[symbol])
 
             # Search through flattened contracts for first matching US exchange
@@ -197,7 +234,7 @@ class IBKRClient:
         endpoint = f'/trsrv/stocks?symbols={symbols}'
 
         try:
-            resp = requests.get(url=f"{self.baseUrl}{endpoint}", verify=False)
+            resp = self._client.get(url=f"{self.baseUrl}{endpoint}", verify=False)
             logger.debug(f'RAW : fetch_conids response : {resp.text}')
 
             respData = resp.json()
@@ -220,7 +257,7 @@ class IBKRClient:
 
         endpoint = f'/portfolio/{self.account}/positions/{positionPage}'
 
-        resp = requests.get(f'{self.baseUrl}{endpoint}',verify=False)
+        resp = self._client.get(f'{self.baseUrl}{endpoint}',verify=False)
         respJSON = json.dumps(resp.json())
 
         # returns Contracts[]
@@ -233,7 +270,7 @@ class IBKRClient:
 
         endpoint = f'/portfolio/{self.account}/position/{conid}'
 
-        resp = requests.get(f'{self.baseUrl}{endpoint}',verify=False)
+        resp = self._client.get(f'{self.baseUrl}{endpoint}',verify=False)
         respJSON = json.dumps(resp.json())
 
         # returns Contracts[]
@@ -244,7 +281,8 @@ class IBKRClient:
 
         endpoint = f'/portfolio/{self.account}/summary'
 
-        resp = requests.get(f'{self.baseUrl}{endpoint}',verify=False)
+        # resp = requests.get(f'{self.baseUrl}{endpoint}',verify=False)
+        resp = self._client.get(f'{self.baseUrl}{endpoint}',verify=False)
         respJSON = json.dumps(resp.json())
 
         return respJSON
@@ -254,8 +292,13 @@ def scratch_conid():
     baseUrl = 'https://localhost:5000/v1/api'
     endpoint = f'/trsrv/stocks?symbols=AAPL'
 
-    resp = requests.get(url=f"{baseUrl}{endpoint}", verify=False)
+    # resp = requests.get(url=f"{baseUrl}{endpoint}", verify=False)
+    ibkr = IBKRClient()
+    resp = ibkr._client.get(url=f"{baseUrl}{endpoint}", verify=False)
     # respJSON = json.dumps(resp.json())
+
+    print(resp.status_code)
+    print(resp.status_code > 299)
 
     return resp.text
 
@@ -282,9 +325,12 @@ def scratch_limit_order():
     respJSON = json.dumps(resp.json())
 
     return respJSON
+
 # print(scratch_conid())
-ibkr = IBKRClient()
+# print(confirm_auth().status_code)
+
+# ibkr = IBKRClient()
 # print(ibkr.fetch_conid('AAPL'))
 # print(ibkr.fetch_conids(['AAPL','GOOGL','F','TSLA']))
-symbol = ['AAPL','GOOGL']
-print(ibkr.fetch_conids(symbol))
+# symbol = ['AAPL','GOOGL']
+# print(ibkr.fetch_conids(symbol))
