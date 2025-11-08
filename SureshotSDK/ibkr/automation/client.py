@@ -130,7 +130,32 @@ class IBKRClient:
             return json.loads('[{"message":"Error: Stop Loss Request Failed"}]')
 
         return respJSON
-    
+
+    def _flatten_contracts_from_companies(self, companiesList):
+        """Flatten all contracts from a list of companies."""
+        all_contracts = []
+        for company in companiesList:
+            logger.debug(f"_flatten_contracts_from_companies : company : {company}")
+            all_contracts.extend(company['contracts'])
+        return all_contracts
+
+    def _flatten_companies_from_symbols(self, symbolsDict):
+        """Flatten all companies from a dictionary of symbols."""
+        all_companies = []
+        for symbol_data in symbolsDict.values():
+            all_companies.extend(symbol_data)
+        return all_companies
+
+    def _filter_us_exchange_contracts(self, contracts):
+        """Filter contracts to only include US exchanges (NASDAQ or NYSE)."""
+        filtered_conids = []
+        for contract in contracts:
+            logger.debug(f"_filter_us_exchange_contracts : contract : {contract}")
+            if contract['isUS']:
+                if contract['exchange'] == 'NASDAQ' or contract['exchange'] == 'NYSE':
+                    filtered_conids.append(contract['conid'])
+        return filtered_conids
+
     def fetch_conid(self,symbol):
 
         endpoint = f'/trsrv/stocks?symbols={symbol}'
@@ -141,12 +166,15 @@ class IBKRClient:
 
             respData = resp.json()
 
-            for companies in respData[symbol]:
-                for contract in companies['contracts']:
-                    if contract['isUS']:
-                        if contract['exchange'] == 'NASDAQ' or contract['exchange'] == 'NYSE':
-                            return contract['conid']
-                        
+            # Flatten all contracts from companies
+            all_contracts = self._flatten_contracts_from_companies(respData[symbol])
+
+            # Search through flattened contracts for first matching US exchange
+            for contract in all_contracts:
+                if contract['isUS']:
+                    if contract['exchange'] == 'NASDAQ' or contract['exchange'] == 'NYSE':
+                        return contract['conid']
+
         except Exception as e:
             logger.exception(f"ERROR : fetch_conid('{symbol}') : {e}")
             return None
@@ -164,9 +192,8 @@ class IBKRClient:
 
         # Make sure conids are comma separated list # AAPL,GOOGL,F,AMZN,TSLA
         symbols = self._list_to_comma_string(symbols)
-        # print(symbols)
         logger.debug(f"fetch_conids('symbols') : symbols: {symbols}")
-        
+
         endpoint = f'/trsrv/stocks?symbols={symbols}'
 
         try:
@@ -175,17 +202,14 @@ class IBKRClient:
 
             respData = resp.json()
 
-            conids = []            
-            for symbol in respData.values():
-                for companies in symbol:
-                    logger.debug(f"fetch_conids : company : {companies}")
-                    for contract in companies['contracts']:
-                        logger.debug(f"fetch_conids : contract : {contract}")
-                        if contract['isUS']:
-                            if contract['exchange'] == 'NASDAQ' or contract['exchange'] == 'NYSE':
-                                conids.append(contract['conid'])
+            allCompanies = self._flatten_companies_from_symbols(respData)
+
+            allContracts = self._flatten_contracts_from_companies(allCompanies)
+
+            conids = self._filter_us_exchange_contracts(allContracts)
+
             return conids
-                            
+
         except Exception as e:
             logger.exception(f"ERROR : fetch_conids({symbols}) : {e}")
             return None
