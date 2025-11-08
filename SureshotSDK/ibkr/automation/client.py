@@ -7,9 +7,10 @@ import os
 # Ignore insecure error messages
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # Get secrets from ENV or Vault
-
-
 
 class IBKRClient:
 
@@ -134,21 +135,60 @@ class IBKRClient:
 
         endpoint = f'/trsrv/stocks?symbols={symbol}'
 
-        resp = requests.get(url=f"{self.baseUrl}{endpoint}", verify=False)
-        # respJSON = json.dumps(resp.json())
+        try:
+            resp = requests.get(url=f"{self.baseUrl}{endpoint}", verify=False)
+            logger.debug(f'RAW : fetch_conid : {resp.text}')
 
-        return resp.text
+            respData = resp.json()
+
+            for companies in respData[symbol]:
+                for contract in companies['contracts']:
+                    if contract['isUS']:
+                        if contract['exchange'] == 'NASDAQ' or contract['exchange'] == 'NYSE':
+                            return contract['conid']
+                        
+        except Exception as e:
+            logger.exception(f"ERROR : fetch_conid('{symbol}') : {e}")
+            return None
+
+        return None
+
+    def _list_to_comma_string(self,symbols):
+        symbolsString = ''
+        for symbol in symbols:
+            symbolsString += symbol+','
+
+        return symbolsString
 
     def fetch_conids(self,symbols):
 
-        # Make sure conids are commm separated list # AAPL,GOOGL,F,AMZN,TSLA
-
+        # Make sure conids are comma separated list # AAPL,GOOGL,F,AMZN,TSLA
+        symbols = self._list_to_comma_string(symbols)
+        # print(symbols)
+        logger.debug(f"fetch_conids('symbols') : symbols: {symbols}")
+        
         endpoint = f'/trsrv/stocks?symbols={symbols}'
 
-        resp = requests.get(url=f"{self.baseUrl}{endpoint}", verify=False)
-        # respJSON = json.dumps(resp.json())
+        try:
+            resp = requests.get(url=f"{self.baseUrl}{endpoint}", verify=False)
+            logger.debug(f'RAW : fetch_conids response : {resp.text}')
 
-        return resp.text
+            respData = resp.json()
+
+            conids = []            
+            for symbol in respData.values():
+                for companies in symbol:
+                    logger.debug(f"fetch_conids : company : {companies}")
+                    for contract in companies['contracts']:
+                        logger.debug(f"fetch_conids : contract : {contract}")
+                        if contract['isUS']:
+                            if contract['exchange'] == 'NASDAQ' or contract['exchange'] == 'NYSE':
+                                conids.append(contract['conid'])
+            return conids
+                            
+        except Exception as e:
+            logger.exception(f"ERROR : fetch_conids({symbols}) : {e}")
+            return None
 
     def fetch_positions(self):
 
@@ -218,6 +258,9 @@ def scratch_limit_order():
     respJSON = json.dumps(resp.json())
 
     return respJSON
-print(scratch_conid())
-# ibkr = IBKRClient()
-# print(ibkr._summary())
+# print(scratch_conid())
+ibkr = IBKRClient()
+# print(ibkr.fetch_conid('AAPL'))
+# print(ibkr.fetch_conids(['AAPL','GOOGL','F','TSLA']))
+symbol = ['AAPL','GOOGL']
+print(ibkr.fetch_conids(symbol))

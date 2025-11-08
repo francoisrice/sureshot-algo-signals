@@ -3,7 +3,7 @@ from .SMA import SMA
 from .Portfolio import Portfolio
 from .utils import get_system_time, format_price, is_market_open
 from .Polygon import PolygonClient
-from ibkr.automation import IBKRClient
+from .ibkr.automation import IBKRClient
 
 # Vault client is optional - only import if running in a cluster with Vault for secrets management
 try:
