@@ -20,7 +20,7 @@ class IBKRClient:
     def __init__(self):
         pass
 
-    def change_symbol_to_conid(self):
+    def _get_conid_from_symbol(self):
         pass
 
     def buy(self,conid,quantity):
@@ -42,9 +42,12 @@ class IBKRClient:
         #   Reauthenticate()
         #   RepeatRequest()
 
+        # If needs order_reply
+        #   ibkr.order_reply(returned_id)
+
         return respJSON
 
-    def sell(self):
+    def sell(self,conid,quantity):
         
         data = {
             "orders":[{
@@ -62,6 +65,9 @@ class IBKRClient:
         # If stale connection
         #   Reauthenticate()
         #   RepeatRequest()
+
+        # If needs order_reply
+        #   ibkr.order_reply(returned_id)
 
         return respJSON
     
@@ -124,8 +130,78 @@ class IBKRClient:
 
         return respJSON
     
+    def fetch_conid(self,symbol):
+
+        endpoint = f'/trsrv/stocks?symbols={symbol}'
+
+        resp = requests.get(url=f"{self.baseUrl}{endpoint}", verify=False)
+        # respJSON = json.dumps(resp.json())
+
+        return resp.text
+
+    def fetch_conids(self,symbols):
+
+        # Make sure conids are commm separated list # AAPL,GOOGL,F,AMZN,TSLA
+
+        endpoint = f'/trsrv/stocks?symbols={symbols}'
+
+        resp = requests.get(url=f"{self.baseUrl}{endpoint}", verify=False)
+        # respJSON = json.dumps(resp.json())
+
+        return resp.text
+
+    def fetch_positions(self):
+
+        positionPage = '0'
+
+        endpoint = f'/portfolio/{self.account}/positions/{positionPage}'
+
+        resp = requests.get(f'{self.baseUrl}{endpoint}',verify=False)
+        respJSON = json.dumps(resp.json())
+
+        # returns Contracts[]
+
+        return respJSON
+    
+    def fetch_position(self,symbol):
+
+        conid = self._get_conid_from_symbol(symbol)
+
+        endpoint = f'/portfolio/{self.account}/position/{conid}'
+
+        resp = requests.get(f'{self.baseUrl}{endpoint}',verify=False)
+        respJSON = json.dumps(resp.json())
+
+        # returns Contracts[]
+
+        return respJSON
+    
+    def _summary(self):
+
+        endpoint = f'/portfolio/{self.account}/summary'
+
+        resp = requests.get(f'{self.baseUrl}{endpoint}',verify=False)
+        respJSON = json.dumps(resp.json())
+
+        return respJSON
+
+def scratch_conid():
+
+    baseUrl = 'https://localhost:5000/v1/api'
+    endpoint = f'/trsrv/stocks?symbols=AAPL'
+
+    resp = requests.get(url=f"{baseUrl}{endpoint}", verify=False)
+    # respJSON = json.dumps(resp.json())
+
+    return resp.text
 
 def scratch_limit_order():
+
+    account = os.environ['IBKR_ACCT_NUMBER']
+    baseUrl = 'https://localhost:5000/v1/api'
+    endpoint = f'/iserver/account/{account}/orders'
+
+    # endpoint = f'/iserver/reply/'
 
     data = {
         "orders":[{
@@ -138,7 +214,10 @@ def scratch_limit_order():
         }]
     }
 
-    resp = requests.post(url=f"{self.baseUrl}{self.endpoint}", verify=False, json=data)
+    resp = requests.post(url=f"{baseUrl}{endpoint}", verify=False, json=data)
     respJSON = json.dumps(resp.json())
 
     return respJSON
+print(scratch_conid())
+# ibkr = IBKRClient()
+# print(ibkr._summary())
