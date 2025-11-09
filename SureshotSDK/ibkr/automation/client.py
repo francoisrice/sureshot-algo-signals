@@ -11,7 +11,7 @@ from .auth_check import confirm_auth
 # Ignore insecure error messages
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Get secrets from ENV or Vault
@@ -95,12 +95,12 @@ class IBKRClient:
         }
 
         resp = self._client.post(url=f"{self.baseUrl}{self.endpoint}", verify=False, json=data)
-        respJSON = json.dumps(resp.json())
+        respData = resp.json()
 
-        # If needs order_reply
-        #   ibkr.order_reply(returned_id)
+        if 'id' in respData[0]:
+            respData = self._continue_and_confirm_order(respData)
 
-        return respJSON
+        return respData
 
     def sell(self,conid,quantity):
         
@@ -115,12 +115,12 @@ class IBKRClient:
         }
 
         resp = self._client.post(url=f"{self.baseUrl}{self.endpoint}", verify=False, json=data)
-        respJSON = json.dumps(resp.json())
+        respData = resp.json()
 
-        # If needs order_reply
-        #   ibkr.order_reply(returned_id)
+        if 'id' in respData[0]:
+            respData = self._continue_and_confirm_order(respData)
 
-        return respJSON
+        return respData
     
     def stop_order(self,conid,quantity,stopPrice):
 
@@ -136,38 +136,39 @@ class IBKRClient:
         }
 
         resp = self._client.post(url=f"{self.baseUrl}{self.endpoint}", verify=False, json=data)
-        respJSON = json.dumps(resp.json())
+        respData = resp.json()
 
         if resp.status_code >= 300:
             return json.loads('{"message":"Error: Stop Loss Request Failed"}')
 
-        if 'id' in respJSON[0]:
-            orderStatus = 'Continue'
-        else:
-            orderStatus = 'Finished'
-        orderJSON = respJSON
-        while resp.status_code < 300 and orderStatus != 'Finished':
-            orderId = orderJSON[0]['id']
-            orderJSON = self.order_reply(orderId)
+        if 'id' in respData[0]:
+            respData = self._continue_and_confirm_order(respData)
 
-            if 'id' not in orderJSON[0]:
-                orderStatus = 'Finished'
-
-        return orderJSON
+        return respData
     
-    def order_reply(self,orderId):
+    def _continue_and_confirm_order(self,respData):
+        isOrderConfirmed = False
+        safety = 0
+
+        while not isOrderConfirmed and safety < 10:
+            respData = self._order_reply(respData[0]['id'])
+            logger.debug(f"_continue_and_confirm_order Response : {respData}")
+            if 'id' not in respData[0]:
+                isOrderConfirmed = True
+            safety += 1
+
+        return respData
+    
+    def _order_reply(self,orderId):
 
         endpoint = f'/iserver/reply/'
 
         data = {"confirmed":True}
 
         resp = self._client.post(f'{self.baseUrl}{endpoint}{orderId}',verify=False, json=data)
-        respJSON = json.dumps(resp.json())
+        respData = resp.json()
 
-        if resp.status_code >= 300:
-            return json.loads('[{"message":"Error: Stop Loss Request Failed"}]')
-
-        return respJSON
+        return respData
 
     def _flatten_contracts_from_companies(self, companiesList):
         """Flatten all contracts from a list of companies."""
@@ -281,11 +282,13 @@ class IBKRClient:
 
         endpoint = f'/portfolio/{self.account}/summary'
 
-        # resp = requests.get(f'{self.baseUrl}{endpoint}',verify=False)
         resp = self._client.get(f'{self.baseUrl}{endpoint}',verify=False)
         respJSON = json.dumps(resp.json())
 
         return respJSON
+    
+    def fetch_acct_balance(self):
+        pass
 
 def scratch_conid():
 
@@ -329,7 +332,7 @@ def scratch_limit_order():
 # print(scratch_conid())
 # print(confirm_auth().status_code)
 
-# ibkr = IBKRClient()
+ibkr = IBKRClient()
 # print(ibkr.fetch_conid('AAPL'))
 # print(ibkr.fetch_conids(['AAPL','GOOGL','F','TSLA']))
 # symbol = ['AAPL','GOOGL']

@@ -1,6 +1,6 @@
 # Next
 
-**Create the client for IBKR so trades can be placed**
+**Combine trading strategies with IBKR client**
 
 - Make sure the logic for prices and executions are correct [...]
   - [x] Create unit and integration tests to ensure these stay correct
@@ -18,7 +18,7 @@
     - If buy order returns 3 confirmation messages with field 'id'
     - If sell_order returns first call as > 299
     - If sell_order returns 3 confirmation messages with field 'id'
-  - 1. Confirm responses with 'id' for buys, sells, and verify for stop_orders
+  - 1. [x] Confirm responses with 'id' for buys, sells, and verify for stop_orders
   - 2. Make sure trades can be placed end-to-end through IBKR client and TradingStrategy correctly and that [x] refreshing the connection is automatic
   - 3. ...Portfolio...
   - 4. ...Run on server...
