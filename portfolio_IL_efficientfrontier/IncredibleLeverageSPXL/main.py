@@ -1,5 +1,5 @@
 import SureshotSDK
-from SureshotSDK import Scheduler
+from SureshotSDK import Scheduler, Portfolio
 from datetime import timedelta
 import logging
 
@@ -12,7 +12,8 @@ class ilSPXLScheduler(Scheduler):
     positionSymbol = "SPXL"
 
     def __init__(self, max_loss=0.05):
-        super().__init__()
+        portfolio = Portfolio()
+        super().__init__(portfolio)
         self.max_loss = max_loss
         self.timeframe = '1d'
         self.sma = SureshotSDK.SMA(self.signalSymbol, 252, self.timeframe)
@@ -52,8 +53,9 @@ class ilSPXLScheduler(Scheduler):
         current_sma = self.sma.get_value()
 
         # Mid Month Stop-Loss
-        if price < (current_sma * (1 - self.max_loss)):
-            self.sell_all(self.positionSymbol)
+        if self.portfolio.invested:
+            if price < (current_sma * (1 - self.max_loss)):
+                self.sell_all(self.positionSymbol)
 
         if self.is_end_of_month(current_date):
 

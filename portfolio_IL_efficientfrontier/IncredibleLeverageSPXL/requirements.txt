@@ -1,3 +1,2 @@
-"pytz>=2021.1",
-"requests>=2.25.0",
-"typing-extensions>=4.0.0"
+# Install SureshotSDK (which includes all its dependencies)
+/app/SureshotSDK

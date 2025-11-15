@@ -82,4 +82,71 @@ spec:
           env:
             - name: NODE_ENV
               value: "production"
+
+        - name: efficientfrontier-api
+          image: efficientfrontier:api
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8000
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://postgres:postgres@postgres:5432/efficientfrontier"
+
+        - name: postgres
+          image: postgres:14-alpine
+          ports:
+            - containerPort: 5432
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          env:
+            - name: POSTGRES_USER
+              value: "postgres"
+            - name: POSTGRES_PASSWORD
+              value: "postgres"
+            - name: POSTGRES_DB
+              value: "efficientfrontier"
+          volumeMounts:
+            - name: postgres-storage
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: postgres-storage
+          emptyDir: {}
       restartPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  selector:
+    app: incredibleleverage
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: efficientfrontier-api
+spec:
+  selector:
+    app: incredibleleverage
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000
+  type: ClusterIP
