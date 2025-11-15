@@ -2,6 +2,7 @@ import logging
 from typing import Dict, Optional
 from datetime import datetime
 from .Polygon import PolygonClient
+from .ibkr.automation.client import IBKRClient
 
 class Portfolio:
     def __init__(self, cash: float = 100000):
@@ -14,9 +15,10 @@ class Portfolio:
         self.cash = cash
         self.initial_cash = cash
         self.positions = {}  # symbol -> shares
-        self.position_values = {}  # symbol -> current market value
+        self.positionValues = {}  # symbol -> current market value
         self.invested = False
         self.polygon_client = PolygonClient()
+        self.ibkr_client = IBKRClient()
         self.logger = logging.getLogger(__name__)
 
     def buy_all(self, symbol: str, current_price: Optional[float] = None):
@@ -41,7 +43,7 @@ class Portfolio:
         if shares_to_buy > 0:
             total_cost = shares_to_buy * current_price
             self.positions[symbol] = self.positions.get(symbol, 0) + shares_to_buy
-            self.position_values[symbol] = self.positions[symbol] * current_price
+            self.positionValues[symbol] = self.positions[symbol] * current_price
             self.cash -= total_cost
             self.invested = len(self.positions) > 0
             self.logger.info(f"Bought {shares_to_buy} shares of {symbol} at ${current_price:.2f}")
@@ -60,6 +62,13 @@ class Portfolio:
         Returns:
             Total proceeds from sale
         """
+
+        # if self.liveTrading:
+        #     # do this
+        # else:
+        #     # paper Trading
+
+
         if symbol not in self.positions or self.positions[symbol] == 0:
             return 0
 
@@ -67,21 +76,24 @@ class Portfolio:
             current_price = self._get_current_price(symbol)
 
         if current_price is None or current_price <= 0:
-            self.logger.error(f"Could not get valid price for {symbol}")
+            self.logger.error(f"Could not get valid price for {symbol} : Current price: {str(current_price)}")
             return 0
 
-        shares_to_sell = self.positions[symbol]
-        total_proceeds = shares_to_sell * current_price
+        # Only share maximum of shares allowed by for TradingStrategy by the PortfolioStrategy
+        sharesToSell = self.positions[symbol]
+
+        totalProceeds = sharesToSell * current_price
 
         del self.positions[symbol]
-        if symbol in self.position_values:
-            del self.position_values[symbol]
+        if symbol in self.positionValues:
+            del self.positionValues[symbol]
 
-        self.cash += total_proceeds
+        # Update cash and positions in the database
+        self.cash += totalProceeds
         self.invested = len(self.positions) > 0
 
-        self.logger.info(f"Sold {shares_to_sell} shares of {symbol} at ${current_price:.2f}")
-        return total_proceeds
+        self.logger.info(f"Sold {sharesToSell} shares of {symbol} at ${current_price:.2f}")
+        return totalProceeds
 
     def buy(self, symbol: str, shares: float, current_price: Optional[float] = None):
         """
@@ -104,7 +116,7 @@ class Portfolio:
         total_cost = shares * current_price
         if total_cost <= self.cash:
             self.positions[symbol] = self.positions.get(symbol, 0) + shares
-            self.position_values[symbol] = self.positions[symbol] * current_price
+            self.positionValues[symbol] = self.positions[symbol] * current_price
             self.cash -= total_cost
             self.invested = len(self.positions) > 0
             return True
@@ -136,10 +148,10 @@ class Portfolio:
 
         if self.positions[symbol] == 0:
             del self.positions[symbol]
-            if symbol in self.position_values:
-                del self.position_values[symbol]
+            if symbol in self.positionValues:
+                del self.positionValues[symbol]
         else:
-            self.position_values[symbol] = self.positions[symbol] * current_price
+            self.positionValues[symbol] = self.positions[symbol] * current_price
 
         self.cash += total_proceeds
         self.invested = len(self.positions) > 0
@@ -157,7 +169,7 @@ class Portfolio:
             current_price = self._get_current_price(symbol)
             if current_price:
                 total_position_value += shares * current_price
-                self.position_values[symbol] = shares * current_price
+                self.positionValues[symbol] = shares * current_price
 
         return self.cash + total_position_value
 
@@ -205,7 +217,7 @@ class Portfolio:
         self.cash = cash
         self.initial_cash = cash
         self.positions = {}
-        self.position_values = {}
+        self.positionValues = {}
         self.invested = False
 
     def __str__(self):

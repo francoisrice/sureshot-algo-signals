@@ -6,10 +6,11 @@ from .Portfolio import Portfolio
 from .Polygon import PolygonClient
 
 class Scheduler:
-    def __init__(self):
+    def __init__(self,portfolio: Portfolio):
         self.tasks = []
         self.running = False
-        self.portfolio = Portfolio()
+        # self.portfolio = Portfolio()
+        self.portfolio = portfolio
         self.start_date = None
         self.end_date = None
         self.polygon_client = PolygonClient()
