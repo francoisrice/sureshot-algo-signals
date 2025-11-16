@@ -1,16 +1,19 @@
 import logging
+import os
+import requests
 from typing import Dict, Optional
 from datetime import datetime
 from .Polygon import PolygonClient
 from .ibkr.automation.client import IBKRClient
 
 class Portfolio:
-    def __init__(self, cash: float = 100000):
+    def __init__(self, cash: float = 100000, strategy_name: str = None):
         """
         Portfolio management class for tracking positions and cash
 
         Args:
             cash: Initial cash amount
+            strategy_name: Name of the strategy (for API tracking)
         """
         self.cash = cash
         self.initial_cash = cash
@@ -20,6 +23,8 @@ class Portfolio:
         self.polygon_client = PolygonClient()
         self.ibkr_client = IBKRClient()
         self.logger = logging.getLogger(__name__)
+        self.strategy_name = strategy_name
+        self.api_url = os.getenv("API_URL")
 
     def buy_all(self, symbol: str, current_price: Optional[float] = None):
         """

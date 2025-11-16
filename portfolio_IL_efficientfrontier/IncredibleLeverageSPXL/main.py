@@ -1,6 +1,7 @@
 import SureshotSDK
 from SureshotSDK import Scheduler, Portfolio
 from datetime import timedelta
+import time
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -8,12 +9,12 @@ logger = logging.getLogger(__name__)
 
 class ilSPXLScheduler(Scheduler):
 
+    name = "IncredibleLeverage_SPXL"
     signalSymbol = "SPY"
     positionSymbol = "SPXL"
 
     def __init__(self, max_loss=0.05):
-        portfolio = Portfolio()
-        super().__init__(portfolio)
+        super().__init__(portfolio=None, strategy_name=self.name)
         self.max_loss = max_loss
         self.timeframe = '1d'
         self.sma = SureshotSDK.SMA(self.signalSymbol, 252, self.timeframe)
@@ -53,13 +54,13 @@ class ilSPXLScheduler(Scheduler):
         current_sma = self.sma.get_value()
 
         # Mid Month Stop-Loss
-        if self.portfolio.invested:
+        if self.invested:
             if price < (current_sma * (1 - self.max_loss)):
                 self.sell_all(self.positionSymbol)
 
         if self.is_end_of_month(current_date):
 
-            if self.portfolio.invested:
+            if self.invested:
                 if price < current_sma:
                     self.sell_all(self.positionSymbol)
 
@@ -78,14 +79,30 @@ class ilSPXLScheduler(Scheduler):
         logger.info("Scheduler is running...")
 
 def main(ss: ilSPXLScheduler):
-    # Run the scheduler silently until it's time for the next candle (1h, 1d, 15m, ...)
 
-    # When scheduled for next candle, fetch price
-    price = ss.price_fetcher(ss.signalSymbol)
-    logger.debug(f"Fetched price for {ss.signalSymbol}: {price}")
+    logger.info(f"Starting {ss.name} strategy monitoring...")
 
-    # Pass price into strategy
-    ss.on_data(price)
+    ss.running = True
+    while ss.running:
+        try:
+            # When scheduled for next candle, fetch price
+            price = ss.price_fetcher(ss.signalSymbol)
+            logger.debug(f"Fetched price for {ss.signalSymbol}: {price}")
+
+            # Pass price into strategy
+            ss.on_data(price)
+
+            # Sleep for 60 seconds before next check
+            ss.idle_seconds(60)
+
+        except KeyboardInterrupt:
+            logger.info("Stopping strategy...")
+            ss.running = False
+            break
+        except Exception as e:
+            logger.error(f"Error in strategy loop: {e}")
+            # Sleep before retrying on error
+            ss.idle_seconds(60)
 
 
 if __name__ == "__main__":

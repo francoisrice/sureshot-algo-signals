@@ -1,6 +1,7 @@
 # Next
 
-**Send trading strategy buy/sell orders to Portfolio Service Layer and execute with IBKR client**
+**The updates to the Portfolio API are tested and working.**
+**Now, Add a vault service to the production deployment, connect paper trading to fully test the connection, deploy to a k8s cluster**
 
 - Make sure the logic for prices and executions are correct [...]
   - [x] Create unit and integration tests to ensure these stay correct

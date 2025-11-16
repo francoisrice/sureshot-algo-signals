@@ -42,3 +42,23 @@ class OrderResponse(BaseModel):
 
     class Config:
         orm_mode = True
+
+
+class TradeRequest(BaseModel):
+    """Request schema for buy_all/sell_all operations"""
+    strategy_name: str = Field(..., description="Strategy identifier (e.g., SPXL)")
+    symbol: str = Field(..., description="Trading symbol")
+    price: float = Field(..., gt=0, description="Current market price")
+
+
+class TradeResponse(BaseModel):
+    """Response schema for buy_all/sell_all operations"""
+    order_id: int
+    strategy_name: str
+    symbol: str
+    order_type: str
+    quantity: float
+    price: float
+    order_value: float
+    remaining_cash: float
+    invested: bool

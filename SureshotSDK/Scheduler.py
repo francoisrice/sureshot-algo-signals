@@ -1,12 +1,15 @@
 import time
 import logging
+import signal
+import os
+import requests
 from typing import Callable, Any, Optional
 from datetime import datetime, timedelta
 from .Portfolio import Portfolio
 from .Polygon import PolygonClient
 
 class Scheduler:
-    def __init__(self,portfolio: Portfolio):
+    def __init__(self, portfolio: Portfolio = None, strategy_name: str = None, api_url: str = None):
         self.tasks = []
         self.running = False
         # self.portfolio = Portfolio()
@@ -15,6 +18,23 @@ class Scheduler:
         self.end_date = None
         self.polygon_client = PolygonClient()
         self.logger = logging.getLogger(__name__)
+        self.strategy_name = strategy_name or getattr(self, 'name', None)
+        self.api_url = api_url or os.getenv("API_URL")
+        self.handle_shutdown_signals()
+
+    def handle_shutdown_signals(self):
+        signal.signal(signal.SIGTERM, self.shutdown_handler)
+        signal.signal(signal.SIGINT, self.shutdown_handler)
+
+    def shutdown_handler(self, signum, frame):
+        logging.info(f"Received signal {signum}, shutting down gracefully...")
+        self.running = False
+
+    def idle_seconds(self, sleepDuration):
+        for _ in range(sleepDuration):
+            if not self.running:
+                break
+            time.sleep(1)
 
     def add_task(self, func: Callable, interval: int, *args, **kwargs):
         """Add a task to be executed at regular intervals
@@ -143,7 +163,37 @@ class Scheduler:
             symbol: Stock symbol to buy
         """
         current_price = self.price_fetcher(symbol)
-        self.portfolio.buy_all(symbol, current_price)
+
+        if not current_price:
+            self.logger.error(f"Cannot buy {symbol}: no price available")
+            return
+
+        # If API is configured, use API-managed state
+        if self.api_url and self.strategy_name:
+            try:
+                response = requests.post(
+                    f"{self.api_url}/orders/buy_all",
+                    json={
+                        "strategy_name": self.strategy_name,
+                        "symbol": symbol,
+                        "price": current_price
+                    },
+                    timeout=10
+                )
+                response.raise_for_status()
+                data = response.json()
+                self.logger.info(
+                    f"BUY_ALL: {data['quantity']} {symbol} @ ${data['price']:.2f}, "
+                    f"Cash remaining: ${data['remaining_cash']:.2f}"
+                )
+            except Exception as e:
+                self.logger.error(f"Failed to execute buy_all via API: {e}")
+        else:
+            # Fallback to local portfolio if no API
+            if self.portfolio:
+                self.portfolio.buy_all(symbol, current_price)
+            else:
+                self.logger.error("No API or Portfolio configured for buy_all")
 
     def sell_all(self, symbol: str):
         """
@@ -153,4 +203,63 @@ class Scheduler:
             symbol: Stock symbol to sell
         """
         current_price = self.price_fetcher(symbol)
-        self.portfolio.sell_all(symbol, current_price)
+
+        if not current_price:
+            self.logger.error(f"Cannot sell {symbol}: no price available")
+            return
+
+        # If API is configured, use API-managed state
+        if self.api_url and self.strategy_name:
+            try:
+                response = requests.post(
+                    f"{self.api_url}/orders/sell_all",
+                    json={
+                        "strategy_name": self.strategy_name,
+                        "symbol": symbol,
+                        "price": current_price
+                    },
+                    timeout=10
+                )
+                response.raise_for_status()
+                data = response.json()
+                self.logger.info(
+                    f"SELL_ALL: {data['quantity']} {symbol} @ ${data['price']:.2f}, "
+                    f"Cash remaining: ${data['remaining_cash']:.2f}"
+                )
+            except Exception as e:
+                self.logger.error(f"Failed to execute sell_all via API: {e}")
+        else:
+            # Fallback to local portfolio if no API
+            if self.portfolio:
+                self.portfolio.sell_all(symbol, current_price)
+            else:
+                self.logger.error("No API or Portfolio configured for sell_all")
+
+    @property
+    def invested(self):
+        """
+        Check if the strategy is currently invested
+
+        Returns:
+            bool: True if invested, False otherwise
+        """
+        # If API is configured, query API for invested status
+        if self.api_url and self.strategy_name:
+            try:
+                response = requests.get(
+                    f"{self.api_url}/portfolio/{self.strategy_name}/invested",
+                    timeout=5
+                )
+                response.raise_for_status()
+                data = response.json()
+                return data.get("invested", False)
+            except Exception as e:
+                self.logger.error(f"Failed to query invested status from API: {e}")
+                return False
+        else:
+            # Fallback to local portfolio if no API
+            if self.portfolio:
+                return self.portfolio.invested
+            else:
+                self.logger.error("No API or Portfolio configured for invested check")
+                return False

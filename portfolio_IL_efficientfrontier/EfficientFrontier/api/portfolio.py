@@ -86,3 +86,16 @@ async def get_all_portfolio_states(db: Session = Depends(get_db)):
     """Get portfolio state for all strategies"""
     portfolios = db.query(PortfolioState).all()
     return portfolios
+
+
+@router.get("/{strategy_name}/invested")
+async def get_invested_status(strategy_name: str, db: Session = Depends(get_db)):
+    """Get invested status for a specific strategy"""
+    db_portfolio = db.query(PortfolioState).filter(
+        PortfolioState.strategy_name == strategy_name
+    ).first()
+
+    if not db_portfolio:
+        raise HTTPException(status_code=404, detail="Portfolio state not found")
+
+    return {"strategy_name": strategy_name, "invested": db_portfolio.invested}

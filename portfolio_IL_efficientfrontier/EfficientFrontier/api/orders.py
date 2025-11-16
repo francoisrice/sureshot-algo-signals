@@ -9,8 +9,8 @@ from typing import List, Optional
 import logging
 
 from ..database import get_db
-from ..models import Order
-from ..schemas import OrderCreate, OrderStatusUpdate, OrderResponse
+from ..models import Order, PortfolioState, Position
+from ..schemas import OrderCreate, OrderStatusUpdate, OrderResponse, TradeRequest, TradeResponse
 
 logger = logging.getLogger(__name__)
 
@@ -111,3 +111,198 @@ async def get_orders(
 
     orders = query.order_by(Order.timestamp.desc()).limit(limit).all()
     return orders
+
+
+@router.post("/buy_all", response_model=TradeResponse, status_code=201)
+async def buy_all(trade: TradeRequest, db: Session = Depends(get_db)):
+    """
+    Buy as many shares as possible with available cash
+
+    Args:
+        trade: TradeRequest with strategy_name, symbol, and current price
+        db: Database session
+
+    Returns:
+        TradeResponse with order details and updated portfolio state
+    """
+    try:
+        # Get or create portfolio state
+        portfolio = db.query(PortfolioState).filter(
+            PortfolioState.strategy_name == trade.strategy_name
+        ).first()
+
+        if not portfolio:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Portfolio not found for strategy {trade.strategy_name}. Create portfolio first."
+            )
+
+        # Calculate shares to buy
+        shares_to_buy = int(portfolio.cash // trade.price)
+
+        if shares_to_buy <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Insufficient cash. Available: ${portfolio.cash:.2f}, Price: ${trade.price:.2f}"
+            )
+
+        total_cost = shares_to_buy * trade.price
+
+        # Create order record
+        order = Order(
+            strategy_name=trade.strategy_name,
+            symbol=trade.symbol,
+            order_type="BUY",
+            quantity=shares_to_buy,
+            price=trade.price,
+            order_value=total_cost,
+            status="EXECUTED"
+        )
+        db.add(order)
+
+        # Update portfolio state
+        portfolio.cash -= total_cost
+        portfolio.invested = True
+        portfolio.total_value = portfolio.cash
+
+        # Update or create position
+        position = db.query(Position).filter(
+            Position.strategy_name == trade.strategy_name,
+            Position.symbol == trade.symbol
+        ).first()
+
+        if position:
+            # Update average price
+            total_shares = position.quantity + shares_to_buy
+            total_cost_basis = (position.quantity * position.avg_price) + total_cost
+            position.avg_price = total_cost_basis / total_shares
+            position.quantity = total_shares
+            position.current_price = trade.price
+            position.market_value = total_shares * trade.price
+        else:
+            position = Position(
+                strategy_name=trade.strategy_name,
+                symbol=trade.symbol,
+                quantity=shares_to_buy,
+                avg_price=trade.price,
+                current_price=trade.price,
+                market_value=total_cost
+            )
+            db.add(position)
+
+        # Update total portfolio value
+        portfolio.total_value += position.market_value
+
+        db.commit()
+        db.refresh(order)
+
+        logger.info(f"BUY_ALL executed: {trade.strategy_name} bought {shares_to_buy} {trade.symbol} @ ${trade.price:.2f}")
+
+        return TradeResponse(
+            order_id=order.id,
+            strategy_name=trade.strategy_name,
+            symbol=trade.symbol,
+            order_type="BUY",
+            quantity=shares_to_buy,
+            price=trade.price,
+            order_value=total_cost,
+            remaining_cash=portfolio.cash,
+            invested=portfolio.invested
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in buy_all: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/sell_all", response_model=TradeResponse, status_code=201)
+async def sell_all(trade: TradeRequest, db: Session = Depends(get_db)):
+    """
+    Sell all shares of a symbol
+
+    Args:
+        trade: TradeRequest with strategy_name, symbol, and current price
+        db: Database session
+
+    Returns:
+        TradeResponse with order details and updated portfolio state
+    """
+    try:
+        # Get portfolio state
+        portfolio = db.query(PortfolioState).filter(
+            PortfolioState.strategy_name == trade.strategy_name
+        ).first()
+
+        if not portfolio:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Portfolio not found for strategy {trade.strategy_name}"
+            )
+
+        # Get position
+        position = db.query(Position).filter(
+            Position.strategy_name == trade.strategy_name,
+            Position.symbol == trade.symbol
+        ).first()
+
+        if not position or position.quantity <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"No position found for {trade.symbol} in strategy {trade.strategy_name}"
+            )
+
+        shares_to_sell = position.quantity
+        total_proceeds = shares_to_sell * trade.price
+
+        # Create order record
+        order = Order(
+            strategy_name=trade.strategy_name,
+            symbol=trade.symbol,
+            order_type="SELL",
+            quantity=shares_to_sell,
+            price=trade.price,
+            order_value=total_proceeds,
+            status="EXECUTED"
+        )
+        db.add(order)
+
+        # Update portfolio state
+        portfolio.cash += total_proceeds
+        portfolio.total_value = portfolio.cash
+
+        # Check if still invested in any positions (before deleting current position)
+        remaining_positions = db.query(Position).filter(
+            Position.strategy_name == trade.strategy_name,
+            Position.id != position.id
+        ).count()
+        portfolio.invested = remaining_positions > 0
+
+        # Remove position
+        db.delete(position)
+
+        db.commit()
+        db.refresh(order)
+
+        logger.info(f"SELL_ALL executed: {trade.strategy_name} sold {shares_to_sell} {trade.symbol} @ ${trade.price:.2f}")
+
+        return TradeResponse(
+            order_id=order.id,
+            strategy_name=trade.strategy_name,
+            symbol=trade.symbol,
+            order_type="SELL",
+            quantity=shares_to_sell,
+            price=trade.price,
+            order_value=total_proceeds,
+            remaining_cash=portfolio.cash,
+            invested=portfolio.invested
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in sell_all: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
