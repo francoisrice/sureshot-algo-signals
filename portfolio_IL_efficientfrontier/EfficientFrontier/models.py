@@ -24,6 +24,7 @@ class Order(Base):
     conid = Column(Integer, nullable=True)  # IBKR contract ID
     ibkr_order_id = Column(String, nullable=True)  # IBKR order ID
     status = Column(String, default="PENDING")  # PENDING, EXECUTED, FAILED
+    trading_mode = Column(String, default="PAPER")  # PAPER or LIVE
     timestamp = Column(DateTime, default=datetime.utcnow, index=True)
     execution_timestamp = Column(DateTime, nullable=True)
     error_message = Column(String, nullable=True)

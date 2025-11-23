@@ -36,6 +36,7 @@ class OrderResponse(BaseModel):
     price: Optional[float]
     order_value: Optional[float]
     status: str
+    trading_mode: Optional[str]
     timestamp: datetime
     ibkr_order_id: Optional[str]
     execution_timestamp: Optional[datetime]

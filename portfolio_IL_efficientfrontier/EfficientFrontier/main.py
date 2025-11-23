@@ -3,6 +3,7 @@ EfficientFrontier API - Main Application
 Microservice for processing buy/sell orders from IL strategies and managing portfolio state
 """
 
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import logging
@@ -47,6 +48,8 @@ app.include_router(indicators.router)
 async def startup_event():
     """Initialize database on startup"""
     logger.info("Starting EfficientFrontier API...")
+    trading_mode = os.getenv("TRADING_MODE", "PAPER")
+    logger.info(f"Trading mode: {trading_mode}")
     init_db()
     logger.info("Database initialized")
 
@@ -54,10 +57,12 @@ async def startup_event():
 @app.get("/")
 async def root():
     """Health check endpoint"""
+    trading_mode = os.getenv("TRADING_MODE", "PAPER")
     return {
         "service": "EfficientFrontier API",
         "status": "healthy",
-        "version": "1.0.0"
+        "version": "1.0.0",
+        "trading_mode": trading_mode
     }
 
 

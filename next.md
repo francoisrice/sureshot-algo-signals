@@ -1,7 +1,8 @@
 # Next
 
-**The updates to the Portfolio API are tested and working.**
-**Now, Add a vault service to the production deployment, connect paper trading to fully test the connection, deploy to a k8s cluster**
+**The Portfolio API setup is working for LIVE and PAPER trading**
+**Now, Add a fast moving strategy to the portfolio for testing**
+**Then, Add a vault service to the production deployment, centralized logging, and deploy to a k8s cluster**
 
 - Make sure the logic for prices and executions are correct [...]
   - [x] Create unit and integration tests to ensure these stay correct
@@ -21,8 +22,9 @@
     - If sell_order returns 3 confirmation messages with field 'id'
   - 1. [x] Confirm responses with 'id' for buys, sells, and verify for stop_orders
   - 2. [...] Make sure trades can be placed end-to-end through IBKR client and TradingStrategy correctly and that [x] refreshing the connection is automatic
-  - 3. [...] ...Portfolio...
-  - 4. ...Run on server...
+  - 3. [x] ...Portfolio...
+  - 4. [] Add vault to Prod deployment
+  - 5. [] ...Run on server...
 - Used a centralized logging service across k8s cluster
   - ...
 - Paper Trading
@@ -31,6 +33,8 @@
   - Add sqlite/ or postgresql/ directory to k8s
 
 - Backtesting
+
+- Discretionary Trading Browser WebApp
 
 ---
 

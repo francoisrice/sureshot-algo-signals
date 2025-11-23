@@ -6,7 +6,9 @@ Endpoints for creating and managing order records
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 from typing import List, Optional
+from datetime import datetime
 import logging
+import os
 
 from ..database import get_db
 from ..models import Order, PortfolioState, Position
@@ -15,6 +17,94 @@ from ..schemas import OrderCreate, OrderStatusUpdate, OrderResponse, TradeReques
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/orders", tags=["orders"])
+
+
+def get_trading_mode():
+    """Get current trading mode from environment"""
+    return os.getenv("TRADING_MODE", "PAPER").upper()
+
+
+def execute_paper_trade(order_type: str, symbol: str, quantity: float, price: float):
+    """
+    Execute paper trade (just log it, no actual broker call)
+
+    Returns:
+        dict: Paper trade execution details
+    """
+    logger.info(f"PAPER TRADE: {order_type} {quantity} {symbol} @ ${price:.2f}")
+    return {
+        "status": "EXECUTED",
+        "execution_timestamp": datetime.utcnow(),
+        "ibkr_order_id": None
+    }
+
+
+def execute_live_trade(order_type: str, symbol: str, quantity: float, price: float, conid: int = None):
+    """
+    Execute live trade via IBKR client
+
+    Args:
+        order_type: BUY or SELL
+        symbol: Trading symbol
+        quantity: Number of shares
+        price: Limit price
+        conid: IBKR contract ID
+
+    Returns:
+        dict: Live trade execution details with IBKR order ID
+    """
+    try:
+        from SureshotSDK.ibkr.automation.client import IBKRClient
+
+        logger.info(f"LIVE TRADE: {order_type} {quantity} {symbol} @ ${price:.2f}")
+
+        # Initialize IBKR client
+        ibkr_client = IBKRClient()
+
+        # Get contract ID if not provided
+        if not conid:
+            conid = ibkr_client.fetch_conid(symbol)
+            if not conid:
+                raise Exception(f"Could not fetch contract ID for {symbol}")
+
+        # Place order based on type
+        if order_type == "BUY":
+            order_response = ibkr_client.place_order(
+                conid=conid,
+                quantity=quantity,
+                side="BUY",
+                order_type="LMT",
+                price=price
+            )
+        else:  # SELL
+            order_response = ibkr_client.place_order(
+                conid=conid,
+                quantity=quantity,
+                side="SELL",
+                order_type="LMT",
+                price=price
+            )
+
+        # Extract order ID from response
+        ibkr_order_id = order_response.get("orderId") if order_response else None
+
+        if not ibkr_order_id:
+            raise Exception("Failed to get IBKR order ID from response")
+
+        logger.info(f"IBKR Order placed: {ibkr_order_id}")
+
+        return {
+            "status": "PENDING",  # Live orders start as PENDING until confirmed
+            "execution_timestamp": None,  # Will be updated when order fills
+            "ibkr_order_id": ibkr_order_id
+        }
+
+    except Exception as e:
+        logger.error(f"Live trade execution failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to execute live trade: {str(e)}"
+        )
 
 
 @router.post("", response_model=OrderResponse, status_code=201)
@@ -148,6 +238,16 @@ async def buy_all(trade: TradeRequest, db: Session = Depends(get_db)):
 
         total_cost = shares_to_buy * trade.price
 
+        # Determine trading mode and execute trade
+        trading_mode = get_trading_mode()
+
+        if trading_mode == "PAPER":
+            # Paper trade - just log it
+            trade_result = execute_paper_trade("BUY", trade.symbol, shares_to_buy, trade.price)
+        else:  # LIVE
+            # Live trade - call IBKR
+            trade_result = execute_live_trade("BUY", trade.symbol, shares_to_buy, trade.price)
+
         # Create order record
         order = Order(
             strategy_name=trade.strategy_name,
@@ -156,7 +256,10 @@ async def buy_all(trade: TradeRequest, db: Session = Depends(get_db)):
             quantity=shares_to_buy,
             price=trade.price,
             order_value=total_cost,
-            status="EXECUTED"
+            status=trade_result["status"],
+            trading_mode=trading_mode,
+            ibkr_order_id=trade_result["ibkr_order_id"],
+            execution_timestamp=trade_result["execution_timestamp"]
         )
         db.add(order)
 
@@ -257,6 +360,16 @@ async def sell_all(trade: TradeRequest, db: Session = Depends(get_db)):
         shares_to_sell = position.quantity
         total_proceeds = shares_to_sell * trade.price
 
+        # Determine trading mode and execute trade
+        trading_mode = get_trading_mode()
+
+        if trading_mode == "PAPER":
+            # Paper trade - just log it
+            trade_result = execute_paper_trade("SELL", trade.symbol, shares_to_sell, trade.price)
+        else:  # LIVE
+            # Live trade - call IBKR
+            trade_result = execute_live_trade("SELL", trade.symbol, shares_to_sell, trade.price)
+
         # Create order record
         order = Order(
             strategy_name=trade.strategy_name,
@@ -265,7 +378,10 @@ async def sell_all(trade: TradeRequest, db: Session = Depends(get_db)):
             quantity=shares_to_sell,
             price=trade.price,
             order_value=total_proceeds,
-            status="EXECUTED"
+            status=trade_result["status"],
+            trading_mode=trading_mode,
+            ibkr_order_id=trade_result["ibkr_order_id"],
+            execution_timestamp=trade_result["execution_timestamp"]
         )
         db.add(order)
 

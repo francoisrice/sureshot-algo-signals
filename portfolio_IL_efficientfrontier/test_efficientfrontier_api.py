@@ -46,6 +46,9 @@ class TestEfficientFrontierAPI:
         assert data["service"] == "EfficientFrontier API"
         assert data["status"] == "healthy"
         assert data["version"] == "1.0.0"
+        assert "trading_mode" in data
+        # Should default to PAPER mode
+        assert data["trading_mode"] in ["PAPER", "LIVE"]
 
     def test_02_create_portfolio(self, api_client, strategy_name):
         """Test creating a portfolio for a strategy"""
@@ -154,6 +157,9 @@ class TestEfficientFrontierAPI:
         assert buy_order["quantity"] == 796.0
         assert buy_order["price"] == 125.50
         assert buy_order["status"] == "EXECUTED"
+        # Verify trading_mode is recorded (should be PAPER for tests)
+        assert "trading_mode" in buy_order
+        assert buy_order["trading_mode"] in ["PAPER", "LIVE"]
 
     def test_08_get_positions(self, api_client, strategy_name):
         """Test retrieving positions for a strategy"""
