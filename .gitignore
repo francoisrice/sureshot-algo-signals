@@ -1,8 +1,11 @@
 .venv
+venv
 __pycache__/
 .env*
 temp.txt
 thoughts.md
+.price_cache/
+backtest_results/
 
 automation/.venv
 automation/__pycache__/

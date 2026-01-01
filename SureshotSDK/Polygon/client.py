@@ -1,6 +1,7 @@
 import requests
 import os
 import logging
+import time
 from datetime import datetime
 from typing import Dict, List, Optional, Union, Tuple
 
@@ -49,6 +50,18 @@ class PolygonClient:
 
         self.base_url = "https://api.polygon.io"
         self.session = requests.Session()
+        self.last_request_time = 0
+        self.min_request_interval = 0.15  # 150ms between requests (free tier: ~5 req/min)
+
+    def _rate_limit(self):
+        """Ensure we don't exceed API rate limits"""
+        current_time = time.time()
+        time_since_last_request = current_time - self.last_request_time
+        if time_since_last_request < self.min_request_interval:
+            sleep_time = self.min_request_interval - time_since_last_request
+            logger.debug(f"Rate limiting: sleeping for {sleep_time:.3f}s")
+            time.sleep(sleep_time)
+        self.last_request_time = time.time()
 
     def get_current_price(self, symbol: str) -> Optional[float]:
         """
@@ -61,6 +74,7 @@ class PolygonClient:
             Current price or None if unavailable
         """
         try:
+            self._rate_limit()
             url = f"{self.base_url}/v2/last/trade/{symbol}"
             params = {'apikey': self.api_key}
 
@@ -122,6 +136,7 @@ class PolygonClient:
         }
 
         try:
+            self._rate_limit()
             response = self.session.get(url, params=params)
             response.raise_for_status()
 
@@ -135,6 +150,18 @@ class PolygonClient:
 
         except requests.RequestException as e:
             logger.error(f"Error fetching historical data from Polygon: {e}")
+            # If rate limited, wait longer and retry once
+            if '429' in str(e):
+                logger.warning("Rate limit hit, waiting 12 seconds before retry...")
+                time.sleep(12)
+                try:
+                    response = self.session.get(url, params=params)
+                    response.raise_for_status()
+                    data = response.json()
+                    if 'results' in data:
+                        return data['results']
+                except:
+                    pass
             return []
 
     def get_ohlcv_data(self,
@@ -200,6 +227,7 @@ class PolygonClient:
             Quote data or None if unavailable
         """
         try:
+            self._rate_limit()
             url = f"{self.base_url}/v2/last/nbbo/{symbol}"
             params = {'apikey': self.api_key}
 
@@ -225,6 +253,7 @@ class PolygonClient:
             True if market is open, False otherwise
         """
         try:
+            self._rate_limit()
             url = f"{self.base_url}/v1/marketstatus/now"
             params = {'apikey': self.api_key}
 
