@@ -1,0 +1,23 @@
+Metadata-Version: 2.4
+Name: SureshotSDK
+Version: 0.1.0
+Summary: Shared SDK for Sureshot algorithmic trading strategies
+Author: Sureshot Team
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Requires-Python: >=3.8
+Requires-Dist: requests>=2.31.0
+Requires-Dist: urllib3>=1.26.0
+Requires-Dist: pytz>=2023.3
+Requires-Dist: typing-extensions>=4.8.0
+Requires-Dist: playwright>=1.40.0
+Requires-Dist: pyotp>=2.8.0
+Dynamic: author
+Dynamic: classifier
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
