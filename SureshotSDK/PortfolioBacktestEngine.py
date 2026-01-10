@@ -453,7 +453,7 @@ class PortfolioBacktestEngine:
         avg_win = np.mean([t.pnl_percent for t in winning_trades]) if winning_trades else 0
         avg_loss = np.mean([t.pnl_percent for t in losing_trades]) if losing_trades else 0
 
-        expectancy = ((1 + (avg_win / 100)) ** win_rate) * ((1 - (avg_loss/ 100)) ** loss_rate) if total_trades > 0 else 0
+        expectancy = ((1 + (avg_win / 100)) ** (win_rate/100)) * ((1 - (avg_loss/ 100)) ** (loss_rate/100)) * 100 if total_trades > 0 else 0
 
         # Annualized return
         if self.start_date and self.end_date:
@@ -495,7 +495,7 @@ class PortfolioBacktestEngine:
         # Kelly Criterion
         if avg_loss != 0 and avg_win != 0:
             # kelly = (win_rate / 100) - ((loss_rate / 100) / abs(avg_loss / avg_win)) ?
-            kelly = (win_rate / 100) / avg_loss - ((loss_rate / 100) / avg_win)
+            kelly = (win_rate  / (abs(avg_loss)/100)) - (loss_rate / (avg_win / 100))
         else:
             kelly = 0
 
@@ -559,7 +559,7 @@ class PortfolioBacktestEngine:
         print(f"Loss Rate: {r['loss_rate']:.2f}%")
         print(f"Average Win Percentage: {r['avg_win_pct']:.2f}%")
         print(f"Average Loss Percentage: {r['avg_loss_pct']:.2f}%")
-        print(f"Expectancy (100 trades): {r['expectancy']:.2f}%")
+        print(f"Expectancy: {r['expectancy']:.2f}%")
 
         print(f"\n{'RISK METRICS':-^80}")
         print(f"Sharpe Ratio: {r['sharpe_ratio']:.3f}")
