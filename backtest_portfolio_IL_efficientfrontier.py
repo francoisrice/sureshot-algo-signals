@@ -48,8 +48,8 @@ def main():
     MAX_MID_MONTH_LOSS = 0.05  # 5% stop loss
 
     # Backtest period
-    start_date = datetime(2020, 1, 1)
-    end_date = datetime(2024, 12, 31)
+    start_date = datetime(2021, 2, 1)
+    end_date = datetime(2025, 1, 31)
 
     # Define the 5 strategies in the portfolio
     strategies = [

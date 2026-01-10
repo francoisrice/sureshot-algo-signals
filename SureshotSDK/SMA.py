@@ -38,7 +38,7 @@ class SMA:
                 end_date = datetime.now()
                 start_date = end_date - timedelta(days=self.period * 2)
             else:
-                end_date = datetime.now()
+                end_date = start_date + timedelta(days=self.period * 2)
 
             # Fetch historical data using Polygon client
             close_prices = self.polygon_client.get_close_prices(
@@ -51,8 +51,9 @@ class SMA:
             # Warm up the SMA with historical closes
             for close_price in close_prices:
                 self.prices.append(float(close_price))
-                if len(self.prices) == self.period:
-                    self._calculate_sma()
+            self._calculate_sma()
+            if not self.sma_value:
+                self.sma_value = close_prices[-1]
 
             self.is_initialized = True
 
@@ -70,13 +71,14 @@ class SMA:
             price: New price to add to the calculation
         """
         self.prices.append(price)
-        if len(self.prices) >= self.period:
-            self._calculate_sma()
+        self._calculate_sma()
 
     def _calculate_sma(self):
         """Calculate the Simple Moving Average"""
         if len(self.prices) >= self.period:
             self.sma_value = sum(list(self.prices)[-self.period:]) / self.period
+        elif self.sma_value:
+            self.sma_value = ((self.period - len(self.prices)) * self.sma_value + sum(list(self.prices)))  / self.period
 
     def get_value(self) -> Optional[float]:
         """
@@ -94,7 +96,8 @@ class SMA:
         Returns:
             True if SMA is ready, False otherwise
         """
-        return len(self.prices) >= self.period and self.sma_value is not None
+        return self.sma_value is not None
+        # return len(self.prices) >= self.period and self.sma_value is not None
 
     def reset(self):
         """Reset the SMA indicator"""

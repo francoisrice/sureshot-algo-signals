@@ -15,7 +15,19 @@
   - ...
 - Paper Trading [X]
 - Backtesting [...]
+  - [x] Manually find investment periods for IL_efficientfrontier portfolio
+  - [x] Calculate P/L for each period
+  - [] Run backtest and compare again manual P/L with manual P/L as source of truth
+    - Get strategies to buy at the first valid signal [X]
+    - Get 5+ years of data on Polygon.io [X]
+  - [...] Fix backtest code until backtests are correct
 - Discretionary Trading WebApp
+
+
+---
+
+- Create testset.csv to automate testing of optimization/evaluate.py
+- 
 
 
 ---

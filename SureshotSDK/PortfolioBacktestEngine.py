@@ -13,7 +13,7 @@ from .SMA import SMA
 from .BacktestEngine import Trade
 
 logger = logging.getLogger(__name__)
-
+logger.level = logging.DEBUG
 
 class StrategyConfig:
     """Configuration for a single strategy in the portfolio"""
@@ -247,6 +247,7 @@ class PortfolioBacktestEngine:
             warmup_start = start_date - timedelta(days=strategy.sma_period * 2)
             sma = SMA(strategy.indicator_symbol, period=strategy.sma_period, timeframe='1d')
             sma.initialize(warmup_start)
+            logger.debug(f"[{strategy.name}] SMA: {sma.sma_value}")
             self.smas[strategy.name] = sma
             self.strategy_previous_close[strategy.name] = None
             self.strategy_previous_close_above_sma[strategy.name] = False
@@ -334,11 +335,15 @@ class PortfolioBacktestEngine:
                 if has_position:
                     if indicator_price < sma_value * (1 - strategy.max_mid_month_loss):
                         logger.info(f"{current_date_key} [{strategy.name}] Mid-month stop loss triggered")
+                        logger.debug(f"{current_date_key} [{strategy.name}] SMA: {sma_value}")
+                        logger.debug(f"{current_date_key} [{strategy.name}] Indicator price: {indicator_price}")
                         self.execute_sell(current_datetime, strategy.name, strategy.trading_symbol, trading_price)
                         continue
 
                 # Month-end logic
                 if self._is_month_end(current_datetime):
+                    logger.debug(f"{current_date_key} [{strategy.name}] SMA: {sma_value}")
+                    logger.debug(f"{current_date_key} [{strategy.name}] Indicator price: {indicator_price}")
                     if has_position:
                         # Exit if below SMA
                         if indicator_price < sma_value:
@@ -347,7 +352,9 @@ class PortfolioBacktestEngine:
                     else:
                         # Entry condition
                         prev_close = self.strategy_previous_close[strategy.name]
+                        logger.debug(f"{current_date_key} [{strategy.name}] Prev Close: {prev_close}")
                         prev_above_sma = self.strategy_previous_close_above_sma[strategy.name]
+                        logger.debug(f"{current_date_key} [{strategy.name}] Prev Close over SMA: {prev_above_sma}")
 
                         if prev_close and indicator_price > sma_value and prev_above_sma:
                             logger.info(f"{current_date_key} [{strategy.name}] Month-end entry")
@@ -361,6 +368,16 @@ class PortfolioBacktestEngine:
             # Record equity for the day
             self._record_equity(current_datetime, historical_data, current_date_key)
 
+        # Close all positions
+        for strategy in self.strategies:
+            has_position = (
+                    strategy.name in self.strategy_positions and
+                    strategy.trading_symbol in self.strategy_positions[strategy.name]
+                )
+            trading_price = historical_data[strategy.trading_symbol][all_dates[-1]]
+            if has_position:
+                self.execute_sell(datetime.combine(all_dates[-1], datetime.min.time()), strategy.name, strategy.trading_symbol, trading_price)
+
         logger.info("Portfolio backtest execution completed")
 
         # Calculate metrics
@@ -371,9 +388,22 @@ class PortfolioBacktestEngine:
         return self.results
 
     def _is_month_end(self, date: datetime) -> bool:
-        """Check if date is month end"""
-        next_day = date + timedelta(days=1)
-        return date.month != next_day.month or date.day >= 25
+        # Get the last calendar day of the month
+        # Move to the first day of next month, then subtract one day
+        if date.month == 12:
+            next_month = date.replace(year=date.year + 1, month=1, day=1)
+        else:
+            next_month = date.replace(month=date.month + 1, day=1)
+
+        last_day_of_month = next_month - timedelta(days=1)
+
+        # Walk backwards from the last day to find the last weekday (Mon-Fri)
+        last_trading_day = last_day_of_month
+        while last_trading_day.weekday() >= 5:  # 5=Saturday, 6=Sunday
+            last_trading_day -= timedelta(days=1)
+
+        # Check if the given date matches the last trading day
+        return date.date() == last_trading_day.date()
 
     def _record_equity(self, date: datetime, historical_data: Dict, current_date_key):
         """Record portfolio equity"""
