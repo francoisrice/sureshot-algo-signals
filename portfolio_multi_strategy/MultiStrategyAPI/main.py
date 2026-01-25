@@ -1,0 +1,82 @@
+"""
+MultiStrategy Portfolio API - Main Application
+Microservice for managing multi-strategy portfolios with dynamic capital allocation
+"""
+
+import os
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+import logging
+
+from .database import init_db
+from .api import orders, positions, portfolio
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# Create FastAPI app
+app = FastAPI(
+    title="MultiStrategy Portfolio API",
+    description="Portfolio management with dynamic capital allocation across multiple strategies",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc"
+)
+
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Configure appropriately for production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# Include routers
+app.include_router(orders.router)
+app.include_router(positions.router)
+app.include_router(portfolio.router)
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database on startup"""
+    logger.info("Starting MultiStrategy Portfolio API...")
+    trading_mode = os.getenv("TRADING_MODE", "PAPER")
+    logger.info(f"Trading mode: {trading_mode}")
+    init_db()
+    logger.info("Database initialized")
+
+
+@app.get("/")
+async def root():
+    """Health check endpoint"""
+    trading_mode = os.getenv("TRADING_MODE", "PAPER")
+    return {
+        "service": "MultiStrategy Portfolio API",
+        "status": "healthy",
+        "version": "1.0.0",
+        "trading_mode": trading_mode,
+        "features": [
+            "Multi-strategy portfolio management",
+            "Dynamic capital allocation",
+            "Risk-adjusted rebalancing",
+            "Position locking during trades"
+        ]
+    }
+
+
+@app.get("/health")
+async def health_check():
+    """Kubernetes health check"""
+    return {"status": "healthy"}
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

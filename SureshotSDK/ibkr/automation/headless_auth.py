@@ -4,19 +4,22 @@ from playwright.async_api import async_playwright
 import pyotp
 import os
 
-loginA = os.environ['IBKR_USERNAME']
-loginB = os.environ['IBKR_PASSWORD']
-loginC = os.environ['IBKR_SECRET']
+def _get_credentials():
+    loginA = os.environ.get('IBKR_USERNAME')
+    loginB = os.environ.get('IBKR_PASSWORD')
+    loginC = os.environ.get('IBKR_SECRET')
 
-errorMsg = 'Missing Auth Credentials:'
-if not loginA:
-    errorMsg += ' username '
-if not loginB:
-    errorMsg += ' password '
-if not loginC:
-    errorMsg += ' otp secret '
-if errorMsg != 'Missing Auth Credentials:':
-    raise(Exception(errorMsg))
+    errorMsg = 'Missing Auth Credentials:'
+    if not loginA:
+        errorMsg += ' username '
+    if not loginB:
+        errorMsg += ' password '
+    if not loginC:
+        errorMsg += ' otp secret '
+    if errorMsg != 'Missing Auth Credentials:':
+        raise(Exception(errorMsg))
+
+    return loginA, loginB, loginC
 
 headless=False
 method='sync'
@@ -29,6 +32,7 @@ def get_totp_code(secret):
       return totp.now()
 
 def sync_login():
+    loginA, loginB, loginC = _get_credentials()
     with sync_playwright() as session:
         browser = session.chromium.launch(headless=headless)
         context = browser.new_context(ignore_https_errors=True)

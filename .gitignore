@@ -5,7 +5,10 @@ __pycache__/
 temp.txt
 thoughts.md
 .price_cache/
+.intraday_cache/
+.backtest_cache/
 backtest_results/
+quantconnect_templates/
 
 automation/.venv
 automation/__pycache__/

@@ -87,7 +87,8 @@ def add_datetime_field(file_path: Path, tz_name: str = None) -> None:
 
     # Detect timezone if not provided
     if tz_name is None:
-        tz_name = detect_timezone(data)
+        # tz_name = detect_timezone(data)
+        tz_name = 'America/New_York'
     else:
         print(f"  Using timezone: {tz_name}")
 
@@ -137,7 +138,8 @@ def process_all_cache_files(cache_dir: str = '.price_cache') -> None:
         sample_data = json.load(f)
 
     print(f"\nDetecting timezone from {first_file.name}:")
-    detected_tz = detect_timezone(sample_data)
+    # detected_tz = detect_timezone(sample_data)
+    detected_tz = 'America/New_York'
 
     # Process all files with detected timezone
     for file_path in json_files:
@@ -148,12 +150,14 @@ def process_all_cache_files(cache_dir: str = '.price_cache') -> None:
 
 if __name__ == '__main__':
     # Change to project root directory
-    script_dir = Path(__file__).parent
-    project_root = script_dir.parent
-    os.chdir(project_root)
+    # script_dir = Path(__file__).parent
+    # project_root = script_dir.parent
+    # os.chdir(project_root)
+    os.chdir("/home/lenovo/Code/sureshot-algo-signals/")
 
     print("=" * 60)
     print("Adding datetime fields to price cache files")
     print("=" * 60)
 
-    process_all_cache_files('.price_cache')
+    # process_all_cache_files('.price_cache')
+    process_all_cache_files('.backtest_cache')

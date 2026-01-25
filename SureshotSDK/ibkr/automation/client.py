@@ -72,12 +72,12 @@ class RetryClient:
     
 class IBKRClient:
 
-    account = os.environ['IBKR_ACCT_NUMBER']
     baseUrl = 'https://localhost:5000/v1/api'
-    endpoint = f'/iserver/account/{account}/orders'
 
     def __init__(self):
         self._client = RetryClient()
+        self.account = os.environ.get('IBKR_ACCT_NUMBER', '')
+        self.endpoint = f'/iserver/account/{self.account}/orders' if self.account else None
 
     def _get_conid_from_symbol(self):
         pass

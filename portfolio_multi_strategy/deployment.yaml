@@ -1,0 +1,186 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: multistrategy-portfolio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: multistrategy
+  template:
+    metadata:
+      labels:
+        app: multistrategy
+    spec:
+      containers:
+        # Strategy containers
+        - name: incredible-leverage-spxl
+          image: multistrategy:incredible-leverage-spxl
+          imagePullPolicy: Never
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+          env:
+            - name: TRADING_MODE
+              value: "LIVE"
+            - name: API_URL
+              value: "http://localhost:8000"
+            - name: POLYGON_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: trading-secrets
+                  key: polygon-api-key
+
+        - name: orb-spy
+          image: multistrategy:orb-spy
+          imagePullPolicy: Never
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+          env:
+            - name: TRADING_MODE
+              value: "LIVE"
+            - name: API_URL
+              value: "http://localhost:8000"
+            - name: POLYGON_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: trading-secrets
+                  key: polygon-api-key
+
+        - name: nakedwheel-spy
+          image: multistrategy:nakedwheel-spy
+          imagePullPolicy: Never
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+          env:
+            - name: TRADING_MODE
+              value: "LIVE"
+            - name: API_URL
+              value: "http://localhost:8000"
+            - name: POLYGON_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: trading-secrets
+                  key: polygon-api-key
+
+        # Portfolio API container
+        - name: multistrategy-api
+          image: multistrategy:api
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8000
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://postgres:postgres@postgres:5432/multistrategy"
+            - name: TRADING_MODE
+              value: "LIVE"
+            - name: IBKR_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: trading-secrets
+                  key: ibkr-username
+            - name: IBKR_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: trading-secrets
+                  key: ibkr-password
+
+        # PostgreSQL database
+        - name: postgres
+          image: postgres:14-alpine
+          ports:
+            - containerPort: 5432
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          env:
+            - name: POSTGRES_USER
+              value: "postgres"
+            - name: POSTGRES_PASSWORD
+              value: "postgres"
+            - name: POSTGRES_DB
+              value: "multistrategy"
+          volumeMounts:
+            - name: postgres-storage
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: postgres-storage
+          persistentVolumeClaim:
+            claimName: multistrategy-postgres-pvc
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: multistrategy-postgres-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  selector:
+    app: multistrategy
+  ports:
+    - protocol: TCP
+      port: 5432
+      targetPort: 5432
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: multistrategy-api
+spec:
+  selector:
+    app: multistrategy
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000
+  type: ClusterIP
+---
+# Optional: Expose API externally
+apiVersion: v1
+kind: Service
+metadata:
+  name: multistrategy-api-external
+spec:
+  selector:
+    app: multistrategy
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000
+  type: LoadBalancer

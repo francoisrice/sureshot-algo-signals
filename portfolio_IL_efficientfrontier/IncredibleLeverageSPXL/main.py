@@ -1,5 +1,5 @@
 import SureshotSDK
-from SureshotSDK import Scheduler, Portfolio
+from SureshotSDK import TradingStrategy, Portfolio
 from datetime import timedelta
 import time
 import logging
@@ -7,7 +7,7 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class ilSPXLScheduler(Scheduler):
+class ilSPXLScheduler(TradingStrategy):
 
     name = "IncredibleLeverage_SPXL"
     signalSymbol = "SPY"
