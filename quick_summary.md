@@ -30,13 +30,14 @@ The good news is the architecture is fundamentally sound - we just need to fix h
 ----------
 
 ~~ 1. You're trying to pull real-time data and you need to instead call historical data -> using Polygon.get_current_price instead of ._get_historical_data~~ **Fixed**
-2. Need to start the API server first <- This is completely broken
+~~2. Need to start the API server first <- This is completely broken~~ **Fixed**
     -> PortfolioAPI started and is now working with uvicorn
-    -> 
-3. Rework how backtest cache is used. Right now, it's a direct string match to the name of the JSON. It needs to match on timeframe (1d) and use the JSON file as long as it contains the correct data, even if it's a subset. If more data is needed, it should query it and concatenate it with the previous data.
+    -> BacktestRunner now hits /initialize on the PortfolioAPI to prep the portfolio
+
 
 
 Follow-up
+3. Rework how backtest cache is used. Right now, it's a direct string match to the name of the JSON. It needs to match on timeframe (1d) and use the JSON file as long as it contains the correct data, even if it's a subset. If more data is needed, it should query it and concatenate it with the previous data.
 1. For BacktestRunner.run()
             |--> BacktestEngine.record_equity() - Why do we record the equity curve, when we're not invested? For diversified optimization? It should not be used for reporting...
 2. Need to use the same logger/ loglevel

@@ -26,7 +26,7 @@ STRATEGY = "IncredibleLeverage_SPXL"  # Options: IncredibleLeverage_SPXL, ORB_SP
 
 # Backtest date range
 START_DATE = datetime(2021, 2, 1)
-END_DATE = datetime(2021, 3, 31)
+END_DATE = datetime(2025, 12, 31)
 # END_DATE = datetime(2025, 12, 31)
 
 # Initial capital
@@ -133,7 +133,7 @@ def run_backtest():
 
         # Initialize for backtesting (now that portfolio is set)
         logger.info("Initializing strategy for backtest mode...")
-        strategy.backtest_initialize()
+        strategy.backtest_initialize(START_DATE,END_DATE)
 
         # Run backtest
         logger.info("\nStarting backtest execution...")

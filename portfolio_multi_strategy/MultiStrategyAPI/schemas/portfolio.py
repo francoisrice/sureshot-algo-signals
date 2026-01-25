@@ -3,8 +3,15 @@ Portfolio state schemas for request/response validation
 """
 
 from pydantic import BaseModel
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 from datetime import datetime
+
+
+class InitializeRequest(BaseModel):
+    """Request schema for initializing portfolios"""
+    strategies: List[str]
+    total_capital: float
+    allocation_method: str = "equal_weight"
 
 
 class PortfolioStateResponse(BaseModel):

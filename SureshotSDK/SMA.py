@@ -21,7 +21,7 @@ class SMA:
         self.period = period
         self.timeframe = timeframe
         self.prices = deque(maxlen=period)
-        self.sma_value = None
+        self.sma_value = 0
         self.is_initialized = False
         self.polygon_client = PolygonClient()
 
@@ -52,7 +52,7 @@ class SMA:
             for close_price in close_prices:
                 self.prices.append(float(close_price))
             self._calculate_sma()
-            if not self.sma_value:
+            if self.sma_value == 0:
                 self.sma_value = close_prices[-1]
 
             self.is_initialized = True
@@ -96,13 +96,13 @@ class SMA:
         Returns:
             True if SMA is ready, False otherwise
         """
-        return self.sma_value is not None
+        return self.sma_value > 0
         # return len(self.prices) >= self.period and self.sma_value is not None
 
     def reset(self):
         """Reset the SMA indicator"""
         self.prices.clear()
-        self.sma_value = None
+        self.sma_value = 0
         self.is_initialized = False
 
     def get_current_price(self) -> Optional[float]:

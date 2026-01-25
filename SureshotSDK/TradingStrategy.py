@@ -124,7 +124,7 @@ class TradingStrategy:
             self.logger.error(f"Error fetching price for {symbol}: {e}")
             return None
 
-    def set_start_date(self, year: int, month: int, day: int):
+    def set_start_date(self, start_date: datetime):
         """
         Set the start date for backtesting
 
@@ -133,9 +133,9 @@ class TradingStrategy:
             month: Month
             day: Day
         """
-        self.start_date = datetime(year, month, day)
+        self.start_date = start_date
 
-    def set_end_date(self, year: int, month: int, day: int):
+    def set_end_date(self, end_date: datetime):
         """
         Set the end date for backtesting
 
@@ -144,7 +144,7 @@ class TradingStrategy:
             month: Month
             day: Day
         """
-        self.end_date = datetime(year, month, day)
+        self.end_date = end_date
 
     def set_cash(self, amount: float):
         """

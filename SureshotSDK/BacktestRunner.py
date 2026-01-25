@@ -62,15 +62,19 @@ class BacktestRunner:
 
         # Initialize PortfolioAPI
         logger.info("PortfolioAPI initialized")
-        apiStartResp = requests.post(url=f"{self.strategy.api_url}/portfolio/initialize",
-                      headers={"Content-Type":"application/json"},
-                       data=json.dumps({
-                            "strategies": [strategy.name],
-                            "total_capital": 100000,
-                            "allocation_method": "equal_weight"
-                            })  
+        init_response = requests.post(
+            url=f"{self.strategy.api_url}/portfolio/initialize",
+            headers={"Content-Type":"application/json"},
+            data=json.dumps({
+                "strategies": [strategy.name],
+                "total_capital": self.initial_cash,
+                "allocation_method": "equal_weight"
+                })  
             )
-        logger.info(apiStartResp.text)
+        if init_response.status_code == 200:
+            logger.info(f"Portfolio initialized: {init_response.text}")    
+        else:
+            logger.info(f"Failed to initialize PortfolioAPI: {init_response.status_code} {apiStartResp.text}")
 
     def run(self):
         """

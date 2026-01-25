@@ -11,7 +11,7 @@ from datetime import datetime
 
 from ..database import get_db
 from ..models import PortfolioState, Position, AllocationHistory
-from ..schemas import PortfolioStateResponse, AllocationResponse
+from ..schemas import PortfolioStateResponse, AllocationResponse, InitializeRequest
 from ..allocation import CapitalAllocator
 
 logger = logging.getLogger(__name__)
@@ -54,9 +54,7 @@ async def get_invested_status(strategy_name: str, db: Session = Depends(get_db))
 
 @router.post("/initialize")
 async def initialize_portfolios(
-    strategies: List[str],
-    total_capital: float,
-    allocation_method: str = "equal_weight",
+    request: InitializeRequest,
     db: Session = Depends(get_db)
 ):
     """
@@ -73,6 +71,9 @@ async def initialize_portfolios(
     """
     try:
         allocator = CapitalAllocator()
+        total_capital = request.total_capital
+        strategies = request.strategies
+        allocation_method = request.allocation_method
 
         # Calculate initial allocations
         allocations = allocator.allocate_capital(

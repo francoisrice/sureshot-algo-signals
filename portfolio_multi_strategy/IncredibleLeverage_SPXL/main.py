@@ -42,9 +42,9 @@ API_URL = os.getenv("API_URL", "http://localhost:8000")
 logger.info(f"API_URL: {API_URL}")
 
 # Backtest settings
-BACKTEST_START_DATE = (2010, 1, 1)
-BACKTEST_END_DATE = (2024, 12, 31)
-BACKTEST_INITIAL_CASH = 100000
+# BACKTEST_START_DATE = (2010, 1, 1)
+# BACKTEST_END_DATE = (2024, 12, 31)
+# BACKTEST_INITIAL_CASH = 100000
 
 # ============================================================================
 # STRATEGY IMPLEMENTATION
@@ -74,11 +74,11 @@ class IncredibleLeverageSPXL(TradingStrategy):
         """Initialize for LIVE trading"""
         self.sma.initialize()
 
-    def backtest_initialize(self):
+    def backtest_initialize(self,start_date,end_date):
         """Initialize for BACKTEST mode"""
-        self.set_start_date(*BACKTEST_START_DATE)
-        self.set_end_date(*BACKTEST_END_DATE)
-        self.set_cash(BACKTEST_INITIAL_CASH)
+        self.set_start_date(start_date)
+        self.set_end_date(end_date)
+        # self.set_cash(BACKTEST_INITIAL_CASH)
 
         self.signalSymbol = SIGNAL_SYMBOL
         self.positionSymbol = POSITION_SYMBOL
@@ -87,7 +87,10 @@ class IncredibleLeverageSPXL(TradingStrategy):
         self.previousCloseAboveSMA = False
 
         # Warm up the SMA with historical data
-        self.sma.initialize(self.start_date)
+        try:
+            self.sma.initialize(self.start_date-timedelta(days=self.period))
+        except:
+            self.sma.sma_value = 0
 
     def _get_current_date(self, passed_date=None):
         """
@@ -126,6 +129,8 @@ class IncredibleLeverageSPXL(TradingStrategy):
         current_date = self._get_current_date(current_date)
         self.sma.Update(price)
         current_sma = self.sma.get_value()
+        if current_sma is None:
+            current_sma = 0
 
         # Mid-month stop-loss check
         if self.invested:
