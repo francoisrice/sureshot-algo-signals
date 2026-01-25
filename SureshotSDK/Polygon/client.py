@@ -91,6 +91,38 @@ class PolygonClient:
         except Exception as e:
             logger.error(f"Error fetching current price from Polygon: {e}")
             return None
+        
+    def get_single_day_price(self, symbol: str, date: datetime) -> Optional[float]:
+        """
+        Get the historical price for a symbol
+
+        Args:
+            symbol: Stock symbol (e.g., 'SPY')
+            date: Trading date
+
+        Returns:
+            Current price or None if unavailable
+        """
+        try:
+            self._rate_limit()
+            date = date.strftime("%Y-%m-%d")
+
+            url = f"{self.base_url}/v1/open-close/{symbol}/{date}"
+            params = {"adjusted": "true", 'apikey': self.api_key}
+
+            response = self.session.get(url, params=params)
+            response.raise_for_status()
+
+            data = response.json()
+
+            if 'close' in data:
+                return float(data['close'])  # 'p' is price
+
+            return None
+
+        except Exception as e:
+            logger.error(f"Error fetching single day price from Polygon: {e}")
+        
 
     def get_historical_data(self,
                           symbol: str,

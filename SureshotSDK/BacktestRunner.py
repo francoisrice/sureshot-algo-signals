@@ -74,7 +74,7 @@ class BacktestRunner:
         if init_response.status_code == 200:
             logger.info(f"Portfolio initialized: {init_response.text}")    
         else:
-            logger.info(f"Failed to initialize PortfolioAPI: {init_response.status_code} {apiStartResp.text}")
+            logger.info(f"Failed to initialize PortfolioAPI: {init_response.status_code} {init_response.text}")
 
     def run(self):
         """
@@ -124,6 +124,7 @@ class BacktestRunner:
                 continue
 
         logger.info("Backtest execution completed")
+        self.strategy.backtest_close()
 
         # Calculate and display results
         logger.info("Calculating metrics...")

@@ -92,6 +92,10 @@ class IncredibleLeverageSPXL(TradingStrategy):
         except:
             self.sma.sma_value = 0
 
+    def backtest_close(self):
+        """Close out position in BACKTEST mode"""
+        self.sell_all(self.positionSymbol)
+
     def _get_current_date(self, passed_date=None):
         """
         Get current date for strategy logic
@@ -126,7 +130,7 @@ class IncredibleLeverageSPXL(TradingStrategy):
             return
 
         # Get current date and update SMA
-        current_date = self._get_current_date(current_date)
+        self.current_date = self._get_current_date(current_date)
         self.sma.Update(price)
         current_sma = self.sma.get_value()
         if current_sma is None:
@@ -139,7 +143,7 @@ class IncredibleLeverageSPXL(TradingStrategy):
                 self.sell_all(self.positionSymbol)
 
         # Month-end logic
-        if self.is_end_of_month(current_date):
+        if self.is_end_of_month(self.current_date):
             if self.invested:
                 # Exit if price below SMA
                 if price < current_sma:

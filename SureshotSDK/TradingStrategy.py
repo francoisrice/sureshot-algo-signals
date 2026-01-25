@@ -123,7 +123,30 @@ class TradingStrategy:
         except Exception as e:
             self.logger.error(f"Error fetching price for {symbol}: {e}")
             return None
+        
+    def historical_price_fetcher(self, symbol: str, date: datetime) -> Optional[float]:
+        """
+        Fetch historical price using Polygon client
 
+        Args:
+            symbol: Stock symbol to fetch price for
+            date: Trading Date
+
+        Returns:
+            Current price of the stock or None if unavailable
+        """
+        try:
+            price = self.polygon_client.get_single_day_price(symbol, date)
+            if price is not None:
+                self.logger.info(f"Fetched historical price for {symbol}: ${price:.2f}")
+                return price
+            else:
+                self.logger.error(f"No historical price data available for {symbol}")
+                return None
+        except Exception as e:
+            self.logger.error(f"Error fetching historical price for {symbol}: {e}")
+
+        
     def set_start_date(self, start_date: datetime):
         """
         Set the start date for backtesting
@@ -162,7 +185,10 @@ class TradingStrategy:
         Args:
             symbol: Stock symbol to buy
         """
-        current_price = self.price_fetcher(symbol)
+        if self.trading_mode == "LIVE":
+            current_price = self.price_fetcher(symbol)
+        else:
+            current_price = self.historical_price_fetcher(symbol, self.current_date)
 
         if not current_price:
             self.logger.error(f"Cannot buy {symbol}: no price available")
@@ -202,7 +228,10 @@ class TradingStrategy:
         Args:
             symbol: Stock symbol to sell
         """
-        current_price = self.price_fetcher(symbol)
+        if self.trading_mode == "LIVE":
+            current_price = self.price_fetcher(symbol)
+        else:
+            current_price = self.historical_price_fetcher(symbol, self.current_date)
 
         if not current_price:
             self.logger.error(f"Cannot sell {symbol}: no price available")
