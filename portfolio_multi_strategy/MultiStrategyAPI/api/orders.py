@@ -228,7 +228,8 @@ async def buy_all(trade: TradeRequest, db: Session = Depends(get_db)):
 
         # IMPORTANT: Use allocated_capital (not total cash) to determine buying power
         # This ensures each strategy only uses their allocated portion
-        available_cash = min(portfolio.cash, portfolio.allocated_capital)
+        # available_cash = min(portfolio.cash, portfolio.allocated_capital)
+        available_cash = portfolio.cash
 
         # Calculate shares to buy based on allocated capital
         shares_to_buy = int(available_cash // trade.price)

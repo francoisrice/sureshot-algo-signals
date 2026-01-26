@@ -114,7 +114,7 @@ class BacktestRunner:
 
             # Record current equity
             # TODO: Verify that we should record_equity always, or should this only be done when is_invested is True
-            self.engine.record_equity(current_date, {trading_symbol: current_price})
+            self.engine.record_equity(current_date, {trading_symbol: current_price}, self.strategy.api_url)
 
             # Call strategy's on_data method with current price and date
             try:
@@ -128,7 +128,7 @@ class BacktestRunner:
 
         # Calculate and display results
         logger.info("Calculating metrics...")
-        self.engine.calculate_metrics()
+        self.engine.calculate_metrics(self.strategy.api_url)
         self.engine.print_results()
         self.engine.save_results()
 

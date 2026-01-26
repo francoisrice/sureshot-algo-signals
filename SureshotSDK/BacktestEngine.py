@@ -1,6 +1,7 @@
 import logging
 import json
 import numpy as np
+import requests
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 from pathlib import Path
@@ -158,7 +159,7 @@ class BacktestEngine:
             return trade
         return None
 
-    def record_equity(self, date: datetime, symbol_prices: Dict[str, float]):
+    def record_equity(self, date: datetime, symbol_prices: Dict[str, float], api_url: str = None):
         """
         Record portfolio equity at a point in time
 
@@ -169,9 +170,17 @@ class BacktestEngine:
         # Calculate total equity
         total_equity = self.portfolio.cash
 
-        for symbol, shares in self.portfolio.positions.items():
-            if symbol in symbol_prices:
-                total_equity += shares * symbol_prices[symbol]
+        if api_url:
+            positions_response = requests.get(f"{api_url}/positions?{self.strategy_name}")
+            positions_response.raise_for_status()
+            positions = positions_response.json()
+            for pos in positions:
+                if pos['symbol'] in symbol_prices:
+                    total_equity += pos['quantity'] * symbol_prices[pos['symbol']]
+        else:
+            for symbol, shares in self.portfolio.positions.items():
+                if symbol in symbol_prices:
+                    total_equity += shares * symbol_prices[symbol]
 
         self.equity_curve.append((date, total_equity))
 
@@ -181,25 +190,66 @@ class BacktestEngine:
             daily_return = (total_equity - prev_equity) / prev_equity
             self.daily_returns.append(daily_return)
 
-    def calculate_metrics(self) -> Dict:
+    def calculate_metrics(self, api_url: str = None) -> Dict:
         """
         Calculate comprehensive backtest metrics
+
+        Args:
+            api_url: Base URL of the MultiStrategyAPI
 
         Returns:
             Dictionary of performance metrics
         """
-        if not self.equity_curve:
-            logger.error("No equity data to calculate metrics")
+
+        # Fetch orders from API
+        try:
+            orders_response = requests.get(f"{api_url}/orders")
+            orders_response.raise_for_status()
+            orders = orders_response.json()
+        except Exception as e:
+            logger.error(f"Failed to fetch orders from API: {e}")
             return {}
 
-        final_value = self.equity_curve[-1][1]
-        total_return = final_value - self.initial_cash
-        total_return_pct = (total_return / self.initial_cash) * 100
+        # Fetch portfolio state for final value
+        try:
+            portfolio_response = requests.get(f"{api_url}/portfolio/{self.strategy_name}")
+            portfolio_response.raise_for_status()
+            portfolio_state = portfolio_response.json()
+        except Exception as e:
+            logger.error(f"Failed to fetch portfolio state from API: {e}")
+            return {}
+
+        # Sort orders by id (chronological order)
+        orders = sorted(orders, key=lambda x: x['id'])
+
+        # Get portfolio values
+        initial_cash = portfolio_state['initial_cash']
+        final_value = portfolio_state['total_value']
+        total_return = final_value - initial_cash
+        total_return_pct = (total_return / initial_cash) * 100 if initial_cash > 0 else 0
+
+        # Pair BUY and SELL orders to calculate P&L for each round trip
+        buy_orders = [o for o in orders if o['order_type'] == 'BUY']
+        sell_orders = [o for o in orders if o['order_type'] == 'SELL']
+
+        # Calculate P&L for each sell by matching with preceding buy
+        trades = []
+        for i, sell in enumerate(sell_orders):
+            if i < len(buy_orders):
+                buy = buy_orders[i]
+                pnl = sell['order_value'] - buy['order_value']
+                pnl_pct = (pnl / buy['order_value']) * 100
+                trades.append({
+                    'buy_value': buy['order_value'],
+                    'sell_value': sell['order_value'],
+                    'pnl': pnl,
+                    'pnl_pct': pnl_pct
+                })
 
         # Separate winning and losing trades
-        winning_trades = [t for t in self.trades if t.action == 'SELL' and t.pnl and t.pnl > 0]
-        losing_trades = [t for t in self.trades if t.action == 'SELL' and t.pnl and t.pnl < 0]
-        total_trades = len(winning_trades) + len(losing_trades)
+        winning_trades = [rt for rt in trades if rt['pnl'] > 0]
+        losing_trades = [rt for rt in trades if rt['pnl'] < 0]
+        total_trades = len(trades)
 
         # Win/Loss statistics
         num_wins = len(winning_trades)
@@ -207,8 +257,8 @@ class BacktestEngine:
         win_rate = (num_wins / total_trades * 100) if total_trades > 0 else 0
         loss_rate = (num_losses / total_trades * 100) if total_trades > 0 else 0
 
-        avg_win = np.mean([t.pnl_percent for t in winning_trades]) if winning_trades else 0
-        avg_loss = np.mean([t.pnl_percent for t in losing_trades]) if losing_trades else 0
+        avg_win = np.mean([rt['pnl_pct'] for rt in winning_trades]) if winning_trades else 0
+        avg_loss = np.mean([rt['pnl_pct'] for rt in losing_trades]) if losing_trades else 0
 
         # Expectancy (average return per trade over 100 trades)
         if total_trades > 0:
@@ -216,18 +266,17 @@ class BacktestEngine:
         else:
             expectancy = 0
 
-        # Annualized return
+        # Annualized return (CAGR)
         if self.start_date and self.end_date:
             days = (self.end_date - self.start_date).days
             years = days / 365.25
             if years > 0:
-                cagr = (((final_value / self.initial_cash) ** (1 / years)) - 1) * 100
+                cagr = (((final_value / initial_cash) ** (1 / years)) - 1) * 100
             else:
                 cagr = 0
         else:
             cagr = 0
 
-        # Sharpe Ratio (assuming 252 trading days, 0% risk-free rate)
         if self.daily_returns:
             avg_daily_return = np.mean(self.daily_returns)
             std_daily_return = np.std(self.daily_returns)
@@ -235,37 +284,65 @@ class BacktestEngine:
                 sharpe_ratio = (avg_daily_return / std_daily_return) * np.sqrt(252)
             else:
                 sharpe_ratio = 0
+        
+        # Calculate returns from round trips for Sharpe/Sortino
+        # trade_returns = [rt['pnl_pct'] / 100 for rt in trades]  # Convert to decimal
+        # Sharpe Ratio annualized
+        # if trade_returns:
+        #     avg_return = np.mean(trade_returns)
+        #     std_return = np.std(trade_returns)
+        #     trades_per_year = max(1, total_trades / max(1, years)) if self.start_date and self.end_date else 1
+        #     if std_return > 0:
+        #         sharpe_ratio = (avg_return / std_return) * np.sqrt(trades_per_year)
+            # else:
+            #     sharpe_ratio = 0
         else:
             sharpe_ratio = 0
+            avg_return = 0
 
         # Sortino Ratio (downside deviation)
         if self.daily_returns:
             downside_returns = [r for r in self.daily_returns if r < 0]
+        # if trade_returns:
+        #     downside_returns = [r for r in trade_returns if r < 0]
             if downside_returns:
                 downside_std = np.std(downside_returns)
+                # trades_per_year = max(1, total_trades / max(1, years)) if self.start_date and self.end_date else 1
                 if downside_std > 0:
                     sortino_ratio = (avg_daily_return / downside_std) * np.sqrt(252)
+                    # sortino_ratio = (avg_return / downside_std) * np.sqrt(trades_per_year)
                 else:
                     sortino_ratio = 0
             else:
-                sortino_ratio = 0
+                sortino_ratio = float('inf') if avg_return > 0 else 0
         else:
             sortino_ratio = 0
 
-        # Maximum Drawdown
+        # Maximum Drawdown from equity curve (if available) or from round trips
         max_drawdown = 0
-        peak = self.equity_curve[0][1]
-
-        for date, equity in self.equity_curve:
-            if equity > peak:
-                peak = equity
-            drawdown = ((peak - equity) / peak) * 100
-            if drawdown > max_drawdown:
-                max_drawdown = drawdown
+        if self.equity_curve:
+            peak = self.equity_curve[0][1]
+            for date, equity in self.equity_curve:
+                if equity > peak:
+                    peak = equity
+                drawdown = ((peak - equity) / peak) * 100
+                if drawdown > max_drawdown:
+                    max_drawdown = drawdown
+        else:
+            # Estimate from round trip returns
+            cumulative = initial_cash
+            peak = initial_cash
+            for rt in trades:
+                cumulative += rt['pnl']
+                if cumulative > peak:
+                    peak = cumulative
+                drawdown = ((peak - cumulative) / peak) * 100 if peak > 0 else 0
+                if drawdown > max_drawdown:
+                    max_drawdown = drawdown
 
         # Kelly Criterion
-        if avg_loss != 0:
-            kelly = (win_rate / 100) - ((loss_rate / 100) / abs(avg_loss / avg_win)) if avg_win != 0 else 0
+        if avg_loss != 0 and avg_win != 0:
+            kelly = ((win_rate) / abs(avg_loss)) - ((loss_rate) / abs(avg_win))
         else:
             kelly = 0
 
@@ -273,7 +350,7 @@ class BacktestEngine:
             'strategy_name': self.strategy_name,
             'start_date': self.start_date.isoformat() if self.start_date else None,
             'end_date': self.end_date.isoformat() if self.end_date else None,
-            'initial_cash': self.initial_cash,
+            'initial_cash': initial_cash,
             'final_value': final_value,
             'total_return': total_return,
             'total_return_pct': total_return_pct,
