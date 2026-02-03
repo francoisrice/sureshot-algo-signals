@@ -314,7 +314,7 @@ class BacktestEngine:
                 else:
                     sortino_ratio = 0
             else:
-                sortino_ratio = float('inf') if avg_return > 0 else 0
+                sortino_ratio = float('inf') if avg_daily_return > 0 else 0
         else:
             sortino_ratio = 0
 

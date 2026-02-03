@@ -8,7 +8,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class SMA:
-    def __init__(self, symbol: str, period: int, timeframe: str = '1d'):
+    def __init__(self, symbol: str, period: int, timeframe: str = '1d', sma_value: int = 0):
         """
         Simple Moving Average indicator
 
@@ -21,7 +21,7 @@ class SMA:
         self.period = period
         self.timeframe = timeframe
         self.prices = deque(maxlen=period)
-        self.sma_value = 0
+        self.sma_value = sma_value
         self.is_initialized = False
         self.polygon_client = PolygonClient()
 

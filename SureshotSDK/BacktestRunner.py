@@ -86,12 +86,14 @@ class BacktestRunner:
         logger.info(f"Starting backtest for {self.strategy.name}")
 
         # Get trading symbol from strategy (different strategies use different attribute names)
-        trading_symbol = getattr(self.strategy, 'tradingSymbol', None) or getattr(self.strategy, 'positionSymbol', None)
+        trading_symbol = getattr(self.strategy, 'tradingSymbol', None) or getattr(self.strategy, 'signalSymbol', None) or getattr(self.strategy, 'positionSymbol', None)
+        position_symbol = getattr(self.strategy, 'positionSymbol', None)
         if not trading_symbol:
             logger.error("Strategy must have 'tradingSymbol' or 'positionSymbol' attribute")
             return None
 
         logger.info(f"Trading Symbol: {trading_symbol}")
+        logger.info(f"Position Symbol: {position_symbol}")
 
         # Fetch historical data
         logger.info("Fetching historical data...")
@@ -113,8 +115,7 @@ class BacktestRunner:
             current_price = candle['c']
 
             # Record current equity
-            # TODO: Verify that we should record_equity always, or should this only be done when is_invested is True
-            self.engine.record_equity(current_date, {trading_symbol: current_price}, self.strategy.api_url)
+            self.engine.record_equity(current_date, {position_symbol: current_price}, self.strategy.api_url)
 
             # Call strategy's on_data method with current price and date
             try:
