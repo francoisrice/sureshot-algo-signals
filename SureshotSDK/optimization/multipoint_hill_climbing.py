@@ -5,6 +5,7 @@ Performs hill climbing optimization with support for multiple starting points
 to avoid local optima.
 """
 
+import requests
 from itertools import product
 import numpy as np
 from typing import Dict, List, Tuple, Callable, Any, Optional
@@ -20,12 +21,14 @@ class MultipointHillClimbing:
 
     def __init__(
         self,
+        api_url: str = "http://localhost:8000",
         min_step_size: float = 0.01,
         step_reduction_factor: float = 0.5,
         max_iterations: int = 1000, # 50,
         num_points: int = 1,
         starting_position = "even-spaced" # "even-spaced" | "random"
     ):
+        self.api_url = api_url
         self.min_step_size = min_step_size
         self.step_reduction_factor = step_reduction_factor
         self.max_iterations = max_iterations
@@ -60,7 +63,7 @@ class MultipointHillClimbing:
 
         return neighbors
 
-    def get_diagonal_neighbors(self, 
+    def get_all_neighbors(self, 
                 current_params: Dict[str, float], 
                 param_ranges: Dict[str, Tuple[float, float, float]]
             ) -> List[Dict[str, float]]:
@@ -122,6 +125,7 @@ class MultipointHillClimbing:
         
         for neighbor_params in neighbors:
             metrics, objective = evaluate_fn(neighbor_params)
+            self.clear_orders()
             history[str(neighbor_params)] = (metrics, objective)
             if not metrics:
                 continue
@@ -148,6 +152,9 @@ class MultipointHillClimbing:
                 print(f"Converged at local maximum: {str(bestParams)}, {str(bestMetrics)}")
 
         return bestParams, param_ranges, bestMetrics, bestNeighborObjective, history
+
+    def clear_orders(self):
+        requests.delete(f"{self.api_url}/orders/clear")
 
     def clip_param(self, value: float, min_val: float, max_val: float) -> float:
         """Clip parameter value to valid range"""

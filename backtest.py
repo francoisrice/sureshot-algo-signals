@@ -16,6 +16,9 @@ import logging
 from datetime import datetime
 import importlib
 
+# Import backtesting framework
+from SureshotSDK import BacktestRunner
+
 # ============================================================================
 # BACKTEST CONFIGURATION - EDIT THESE VALUES
 # ============================================================================
@@ -116,9 +119,6 @@ def run_backtest():
         strategy = strategy_class()
 
         logger.info(f"Strategy instantiated: {strategy.name}")
-
-        # Import backtesting framework
-        from SureshotSDK import BacktestRunner
 
         # Create backtest runner (this sets strategy.portfolio)
         logger.info("Creating backtest runner...")
