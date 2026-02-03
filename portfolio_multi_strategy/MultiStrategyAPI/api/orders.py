@@ -12,7 +12,7 @@ import os
 
 from ..database import get_db
 from ..models import Order, PortfolioState, Position
-from ..schemas import OrderCreate, OrderStatusUpdate, OrderResponse, TradeRequest, TradeResponse
+from ..schemas import OrderCreate, OrderStatusUpdate, OrderResponse, TradeRequest, TradeResponse, DeleteResponse
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +105,28 @@ def execute_live_trade(order_type: str, symbol: str, quantity: float, price: flo
             status_code=500,
             detail=f"Failed to execute live trade: {str(e)}"
         )
+
+@router.delete("/clear", response_model=DeleteResponse)
+async def clear_orders(
+    strategy_name: Optional[str] = None,
+    symbol: Optional[str] = None,
+    status: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """Delete orders with optional filters"""
+    query = db.query(Order)
+
+    if strategy_name:
+        query = query.filter(Order.strategy_name == strategy_name)
+    if symbol:
+        query = query.filter(Order.symbol == symbol)
+    if status:
+        query = query.filter(Order.status == status)
+
+    deleted_count = query.delete()
+    db.commit()
+
+    return DeleteResponse(deleted=deleted_count)
 
 
 @router.post("", response_model=OrderResponse, status_code=201)

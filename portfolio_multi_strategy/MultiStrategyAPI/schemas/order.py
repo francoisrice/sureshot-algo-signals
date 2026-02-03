@@ -64,3 +64,8 @@ class TradeResponse(BaseModel):
     allocated_capital: float
     remaining_cash: float
     invested: bool
+
+
+class DeleteResponse(BaseModel):
+    """Response schema for delete operations"""
+    deleted: int = Field(..., description="Number of records deleted")
