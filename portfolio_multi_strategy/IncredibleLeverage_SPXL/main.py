@@ -31,7 +31,7 @@ STRATEGY_NAME = "IncredibleLeverage_SPXL"
 SIGNAL_SYMBOL = "SPY"
 POSITION_SYMBOL = "SPXL"
 SMA_PERIOD = 252
-MAX_MID_MONTH_LOSS = 0.05
+OPTIMIZATION_MAX_MID_MONTH_LOSS = 0.05
 TIMEFRAME = "1d"
 
 # Trading mode
@@ -59,7 +59,7 @@ class IncredibleLeverageSPXL(TradingStrategy):
     signalSymbol = SIGNAL_SYMBOL
     positionSymbol = POSITION_SYMBOL
 
-    def __init__(self, max_loss=MAX_MID_MONTH_LOSS):
+    def __init__(self, max_loss=OPTIMIZATION_MAX_MID_MONTH_LOSS):
         super().__init__(portfolio=None, strategy_name=self.name, api_url=API_URL)
         self.max_loss = max_loss
         self.timeframe = TIMEFRAME
@@ -90,7 +90,7 @@ class IncredibleLeverageSPXL(TradingStrategy):
         try:
             self.sma.initialize(self.start_date-timedelta(days=self.period))
         except:
-            self.sma.sma_value = 0
+            self.sma.sma_value = 332.05
 
     def backtest_close(self):
         """Close out position in BACKTEST mode"""
@@ -205,7 +205,7 @@ def main(strategy: IncredibleLeverageSPXL):
 
 
 if __name__ == "__main__":
-    strategy = IncredibleLeverageSPXL(max_loss=MAX_MID_MONTH_LOSS)
+    strategy = IncredibleLeverageSPXL(max_loss=OPTIMIZATION_MAX_MID_MONTH_LOSS)
 
     if TRADING_MODE == "BACKTEST":
         # Backtest mode will be handled by backtest.py at repo root
