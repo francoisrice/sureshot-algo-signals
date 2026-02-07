@@ -98,6 +98,10 @@ class TradingStrategy:
             self.running = False
             print("Scheduler stopped")
 
+    def backtest_close(self):
+        """Close out position in BACKTEST mode"""
+        self.sell_all(self.positionSymbol)
+
     def stop(self):
         """Stop the scheduler"""
         self.running = False
