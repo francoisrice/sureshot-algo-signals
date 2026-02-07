@@ -100,7 +100,8 @@ class TradingStrategy:
 
     def backtest_close(self):
         """Close out position in BACKTEST mode"""
-        self.sell_all(self.positionSymbol)
+        if self.invested:
+            self.sell_all(self.positionSymbol)
 
     def stop(self):
         """Stop the scheduler"""
