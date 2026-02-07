@@ -66,6 +66,11 @@ class BacktestEngine:
 
         logger.info(f"BacktestEngine initialized for '{strategy_name}' with ${initial_cash:,.2f}")
 
+    def _fetch_from_api(self, symbol: str, start_date: datetime, end_date: datetime, timeframe: str) -> List[Dict]:
+        """Fetch price data from Polygon API (used as callback for cache)"""
+        logger.info(f"Fetching {symbol} data from {start_date.date()} to {end_date.date()}")
+        return self.polygon_client.get_historical_data(symbol, start_date, end_date, timeframe)
+
     def get_historical_data(
         self,
         symbol: str,
@@ -85,17 +90,18 @@ class BacktestEngine:
         Returns:
             List of price data
         """
-        # Try cache first
         if self.use_cache and self.price_cache:
-            cached_data = self.price_cache.get(symbol, start_date, end_date, timeframe)
+            # Try cache with fetch callback for missing data
+            cached_data = self.price_cache.get(
+                symbol, start_date, end_date, timeframe,
+                fetch_fn=self._fetch_from_api
+            )
             if cached_data:
                 return cached_data
 
-        # Fetch from API
-        logger.info(f"Fetching {symbol} data from {start_date.date()} to {end_date.date()}")
-        data = self.polygon_client.get_historical_data(symbol, start_date, end_date, timeframe)
+        # No cache or cache miss - fetch and store
+        data = self._fetch_from_api(symbol, start_date, end_date, timeframe)
 
-        # Cache the data
         if self.use_cache and self.price_cache and data:
             self.price_cache.set(symbol, start_date, end_date, timeframe, data)
 
