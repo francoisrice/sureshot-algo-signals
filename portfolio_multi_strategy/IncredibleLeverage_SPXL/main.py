@@ -78,7 +78,6 @@ class IncredibleLeverageSPXL(TradingStrategy):
         """Initialize for BACKTEST mode"""
         self.set_start_date(start_date)
         self.set_end_date(end_date)
-        # self.set_cash(BACKTEST_INITIAL_CASH)
 
         self.signalSymbol = SIGNAL_SYMBOL
         self.positionSymbol = POSITION_SYMBOL
@@ -91,10 +90,6 @@ class IncredibleLeverageSPXL(TradingStrategy):
             self.sma.initialize(self.start_date-timedelta(days=self.period))
         except:
             self.sma.sma_value = 332.05
-
-    def backtest_close(self):
-        """Close out position in BACKTEST mode"""
-        self.sell_all(self.positionSymbol)
 
     def _get_current_date(self, passed_date=None):
         """

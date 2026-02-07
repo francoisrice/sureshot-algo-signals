@@ -58,7 +58,7 @@ class StockScanner:
         ]
         return tickers
 
-    def calculate_atr_percent(self, symbol: str) -> Optional[float]:
+    def calculate_atr_percent(self, symbol: str, currentDate: datetime = None) -> Optional[float]:
         """
         Calculate ATR as percentage of current price
 
@@ -70,7 +70,8 @@ class StockScanner:
         """
         try:
             # Get recent data for ATR calculation
-            end_date = datetime.now()
+            if not currentDate:
+                end_date = datetime.now()
             start_date = end_date - timedelta(days=self.atr_period + 10)
 
             bars = self.polygon_client.get_historical_data(

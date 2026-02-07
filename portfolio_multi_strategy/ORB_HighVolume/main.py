@@ -32,8 +32,8 @@ logger = logging.getLogger(__name__)
 STRATEGY_NAME = "ORB_HighVolume"
 ATR_PERIOD = 14
 OPENING_RANGE_MINUTES = 5
-TAKE_PROFIT_ATR_DISTANCE = 0.3  # 30% of ATR
-STOP_LOSS_ATR_DISTANCE = 0.5    # 50% of ATR
+OPTIMIZATION_TAKE_PROFIT_ATR_DISTANCE = 0.3  # 30% of ATR
+OPTIMIZATION_STOP_LOSS_ATR_DISTANCE = 0.5    # 50% of ATR
 STOP_LOSS_RISK_SIZE = 0.01      # Risk 1% per trade
 MIN_STOCK_PRICE = 5.0
 MIN_ATR_PERCENT = 10.0
@@ -46,9 +46,9 @@ TRADING_MODE = os.getenv("TRADING_MODE", "LIVE")
 API_URL = os.getenv("API_URL", "http://localhost:8000")
 
 # Backtest settings
-BACKTEST_START_DATE = (2020, 1, 1)
-BACKTEST_END_DATE = (2024, 12, 31)
-BACKTEST_INITIAL_CASH = 100000
+# BACKTEST_START_DATE = (2025, 1, 1)
+# BACKTEST_END_DATE = (2025, 12, 31)
+# BACKTEST_INITIAL_CASH = 100000
 
 # Market hours (ET)
 MARKET_OPEN = time(9, 30)
@@ -56,7 +56,7 @@ MARKET_CLOSE = time(16, 0)
 OPENING_RANGE_END = time(9, 35)  # 5 minutes after open
 
 # Rebalance frequency: Scan for new stock every N days when not in position
-REBALANCE_FREQUENCY_DAYS = 60
+# REBALANCE_FREQUENCY_DAYS = 60
 
 # ============================================================================
 # STRATEGY IMPLEMENTATION
@@ -121,11 +121,10 @@ class ORBStrategy(TradingStrategy):
         logger.info(f"Initializing {self.name} for LIVE trading")
         self.scan_for_stock()
 
-    def backtest_initialize(self):
+    def backtest_initialize(self,start_date,end_date):
         """Initialize for BACKTEST mode"""
-        self.set_start_date(*BACKTEST_START_DATE)
-        self.set_end_date(*BACKTEST_END_DATE)
-        self.set_cash(BACKTEST_INITIAL_CASH)
+        self.set_start_date(start_date)
+        self.set_end_date(end_date)
 
         logger.info(f"Initialized {self.name} for backtesting")
 
