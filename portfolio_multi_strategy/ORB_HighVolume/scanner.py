@@ -11,6 +11,7 @@ import logging
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta
 import SureshotSDK
+from SureshotSDK.BacktestingPriceCache import BacktestingPriceCache
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,9 @@ class StockScanner:
         min_price: float = 5.0,
         min_atr_percent: float = 10.0,
         atr_period: int = 14,
-        volume_lookback_days: int = 20
+        volume_lookback_days: int = 20,
+        price_cache: Optional[BacktestingPriceCache] = BacktestingPriceCache()
+        # price_cache: Optional[BacktestingPriceCache] = None
     ):
         """
         Initialize scanner
@@ -35,12 +38,14 @@ class StockScanner:
             min_atr_percent: Minimum ATR as % of price
             atr_period: ATR calculation period
             volume_lookback_days: Days to look back for volume average
+            price_cache: Optional price cache for backtest mode
         """
         self.min_price = min_price
         self.min_atr_percent = min_atr_percent
         self.atr_period = atr_period
         self.volume_lookback_days = volume_lookback_days
         self.polygon_client = SureshotSDK.PolygonClient()
+        self.price_cache = price_cache
 
     def get_sp500_tickers(self) -> List[str]:
         """
@@ -58,7 +63,28 @@ class StockScanner:
         ]
         return tickers
 
-    def calculate_atr_percent(self, symbol: str, currentDate: datetime = None) -> Optional[float]:
+    def _fetch_from_api(self, symbol: str, start_date: datetime, end_date: datetime, timeframe: str) -> List[Dict]:
+        """Fetch price data from Polygon API (used as callback for cache)"""
+        return self.polygon_client.get_historical_data(
+            symbol=symbol,
+            start_date=start_date.strftime("%Y-%m-%d"),
+            end_date=end_date.strftime("%Y-%m-%d"),
+            timeframe=timeframe
+        )
+
+    def _get_bars(self, symbol: str, start_date: datetime, end_date: datetime, timeframe: str = "1d") -> List[Dict]:
+        """Get price bars using cache if available, otherwise fetch directly"""
+        if self.price_cache:
+            cached = self.price_cache.get(
+                symbol, start_date, end_date, timeframe,
+                fetch_fn=self._fetch_from_api
+            )
+            if cached:
+                return cached
+
+        return self._fetch_from_api(symbol, start_date, end_date, timeframe)
+
+    def calculate_atr_percent(self, symbol: str, end_date: datetime = None) -> Optional[float]:
         """
         Calculate ATR as percentage of current price
 
@@ -70,16 +96,11 @@ class StockScanner:
         """
         try:
             # Get recent data for ATR calculation
-            if not currentDate:
+            if not end_date:
                 end_date = datetime.now()
             start_date = end_date - timedelta(days=self.atr_period + 10)
 
-            bars = self.polygon_client.get_historical_data(
-                symbol=symbol,
-                start_date=start_date.strftime("%Y-%m-%d"),
-                end_date=end_date.strftime("%Y-%m-%d"),
-                timeframe="1d"
-            )
+            bars = self._get_bars(symbol, start_date, end_date, "1d")
 
             if not bars or len(bars) < self.atr_period:
                 return None
@@ -118,12 +139,7 @@ class StockScanner:
             end_date = datetime.now()
             start_date = end_date - timedelta(days=self.volume_lookback_days + 10)
 
-            bars = self.polygon_client.get_historical_data(
-                symbol=symbol,
-                start_date=start_date.strftime("%Y-%m-%d"),
-                end_date=end_date.strftime("%Y-%m-%d"),
-                timeframe="1d"
-            )
+            bars = self._get_bars(symbol, start_date, end_date, "1d")
 
             if not bars or len(bars) < self.volume_lookback_days:
                 return None
