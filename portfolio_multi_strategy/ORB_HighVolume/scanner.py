@@ -12,6 +12,7 @@ from typing import List, Dict, Optional
 from datetime import datetime, timedelta
 import SureshotSDK
 from SureshotSDK.BacktestingPriceCache import BacktestingPriceCache
+from SureshotSDK.utils import fetch_all_nasdaq_symbols
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +110,7 @@ class StockScanner:
             atr = SureshotSDK.ATR(symbol, self.atr_period)
 
             for bar in bars:
-                atr.update(bar['high'], bar['low'], bar['close'])
+                atr.Update(bar['high'], bar['low'], bar['close'])
 
             atr_value = atr.get_value()
             current_price = bars[-1]['close']
@@ -125,7 +126,7 @@ class StockScanner:
             logger.error(f"Error calculating ATR for {symbol}: {e}")
             return None
 
-    def get_average_volume(self, symbol: str) -> Optional[float]:
+    def get_average_volume(self, symbol: str, end_date: datetime = None) -> Optional[float]:
         """
         Get average volume over lookback period
 
@@ -136,7 +137,8 @@ class StockScanner:
             Average volume or None if unable to calculate
         """
         try:
-            end_date = datetime.now()
+            if not end_date:
+                end_date = datetime.now()
             start_date = end_date - timedelta(days=self.volume_lookback_days + 10)
 
             bars = self._get_bars(symbol, start_date, end_date, "1d")
@@ -144,7 +146,7 @@ class StockScanner:
             if not bars or len(bars) < self.volume_lookback_days:
                 return None
 
-            volumes = [bar['volume'] for bar in bars[-self.volume_lookback_days:]]
+            volumes = [bar['v'] for bar in bars[-self.volume_lookback_days:]]
             avg_volume = sum(volumes) / len(volumes)
 
             return avg_volume
@@ -153,16 +155,18 @@ class StockScanner:
             logger.error(f"Error getting volume for {symbol}: {e}")
             return None
 
-    def get_current_price(self, symbol: str) -> Optional[float]:
+    def get_current_price(self, symbol: str, current_date = None) -> Optional[float]:
         """Get current price for symbol"""
         try:
+            if current_date:
+                return self._get_bars(symbol, current_date, current_date, "1d")
             price = self.polygon_client.get_current_price(symbol)
             return price
         except Exception as e:
             logger.error(f"Error getting price for {symbol}: {e}")
             return None
 
-    def scan(self, max_candidates: int = 5) -> List[Dict]:
+    def scan(self, max_candidates: int = 5, current_date = None) -> List[Dict]:
         """
         Scan for top candidates
 
@@ -174,26 +178,27 @@ class StockScanner:
         """
         logger.info(f"Scanning for stocks with min price ${self.min_price}, min ATR {self.min_atr_percent}%...")
 
-        tickers = self.get_sp500_tickers()
+        # tickers = self.get_sp500_tickers()
+        tickers = fetch_all_nasdaq_symbols()
         candidates = []
 
         for symbol in tickers:
             logger.debug(f"Scanning {symbol}...")
 
             # Get current price
-            price = self.get_current_price(symbol)
+            price = self.get_current_price(symbol, current_date)
             if not price or price < self.min_price:
                 logger.debug(f"  {symbol}: Price ${price} below minimum")
                 continue
 
             # Calculate ATR%
-            atr_percent = self.calculate_atr_percent(symbol)
+            atr_percent = self.calculate_atr_percent(symbol, current_date)
             if not atr_percent or atr_percent < self.min_atr_percent:
                 logger.debug(f"  {symbol}: ATR% {atr_percent:.2f}% below minimum")
                 continue
 
             # Get average volume
-            avg_volume = self.get_average_volume(symbol)
+            avg_volume = self.get_average_volume(symbol, current_date)
             if not avg_volume:
                 logger.debug(f"  {symbol}: Unable to get volume data")
                 continue
@@ -202,8 +207,8 @@ class StockScanner:
                 'symbol': symbol,
                 'price': price,
                 'atr_percent': atr_percent,
-                'avg_volume': avg_volume,
-                'score': avg_volume * atr_percent  # Simple score: volume * volatility
+                'avg_volume': avg_volume # ,
+                # 'score': avg_volume * atr_percent  # Simple score: volume * volatility
             }
 
             candidates.append(candidate)
@@ -219,16 +224,30 @@ class StockScanner:
 
         return top_candidates
 
-    def get_top_candidate(self) -> Optional[str]:
+    def get_top_candidate(self, current_date = None) -> Optional[str]:
         """
         Get the single best candidate symbol
 
         Returns:
             Symbol of top candidate or None
         """
-        candidates = self.scan(max_candidates=1)
+        candidates = self.scan(max_candidates=1, current_date=current_date)
 
         if candidates:
             return candidates[0]['symbol']
+        else:
+            return None
+
+    def get_candidates(self, max_candidates: int = 1) -> Optional[str]:
+        """
+        Get the single best candidate symbol
+
+        Returns:
+            Symbol of top candidate or None
+        """
+        candidates = self.scan(max_candidates=max_candidates)
+
+        if candidates:
+            return candidates
         else:
             return None
