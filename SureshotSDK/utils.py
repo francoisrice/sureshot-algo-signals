@@ -1,6 +1,7 @@
 from datetime import datetime
 import pytz
 from typing import Optional
+import urllib
 
 def get_system_time() -> datetime:
     """
@@ -52,3 +53,30 @@ def is_market_open() -> bool:
     market_close = hour < 16
 
     return market_open and market_close
+
+def fetch_all_nasdaq_symbols():
+    
+    # Refresh list of stocks
+    urllib.request.urlretrieve('ftp://ftp.nasdaqtrader.com/SymbolDirectory/nasdaqlisted.txt', 'nasdaqlisted.txt')
+    urllib.request.urlretrieve('ftp://ftp.nasdaqtrader.com/SymbolDirectory/otherlisted.txt', 'otherlisted.txt')
+
+    # Pull data into memory
+    symbols = []
+    with open('nasdaqlisted.txt') as nasdaqListed:
+        nasdaq = nasdaqListed.read().splitlines()
+
+        for symbolLine in nasdaq:
+            symbolLineData = symbolLine.split('|')
+            if symbolLineData[3] != 'N': # Filter out Test Stocks
+                continue
+            symbols.append(symbolLineData[0])
+
+    with open('otherlisted.txt') as otherListed: #6251
+        other = otherListed.read().splitlines()
+        for symbolLine in other:
+            symbolLineData = symbolLine.split('|')
+            if symbolLineData[6] == 'N': # Filter out Test Issues
+                symbols.append(symbolLineData[0])
+
+    return symbols
+        
