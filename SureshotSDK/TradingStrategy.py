@@ -269,6 +269,49 @@ class TradingStrategy:
             else:
                 self.logger.error("No API or Portfolio configured for sell_all")
 
+    def sell_short_all(self, symbol: str):
+        """
+        Sell short all shares of a symbol
+
+        Args:
+            symbol: Stock symbol to sell
+        """
+        if self.trading_mode == "LIVE":
+            current_price = self.price_fetcher(symbol)
+        else:
+            current_price = self.historical_price_fetcher(symbol, self.current_date)
+
+        if not current_price:
+            self.logger.error(f"Cannot sell {symbol}: no price available")
+            return
+        
+        # If API is configured, use API-managed state
+        if self.api_url and self.strategy_name:
+            try:
+                response = requests.post(
+                    f"{self.api_url}/orders/sell_short_all",
+                    json={
+                        "strategy_name": self.strategy_name,
+                        "symbol": symbol,
+                        "price": current_price
+                    },
+                    timeout=10
+                )
+                response.raise_for_status()
+                data = response.json()
+                self.logger.info(
+                    f"SELL_SHORT_ALL: {data['quantity']} {symbol} @ ${data['price']:.2f}, "
+                    f"Cash remaining: ${data['remaining_cash']:.2f}"
+                )
+            except Exception as e:
+                self.logger.error(f"Failed to execute sell_all via API: {e}")
+        else:
+            # Fallback to local portfolio if no API
+            if self.portfolio:
+                self.portfolio.sell_short_all(symbol, current_price)
+            else:
+                self.logger.error("No API or Portfolio configured for sell_all")
+
     @property
     def invested(self):
         """
