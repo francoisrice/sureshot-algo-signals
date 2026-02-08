@@ -56,7 +56,7 @@ MARKET_CLOSE = time(16, 0)
 OPENING_RANGE_END = time(9, 35)  # 5 minutes after open
 
 # Rebalance frequency: Scan for new stock every N days when not in position
-# REBALANCE_FREQUENCY_DAYS = 60
+REBALANCE_FREQUENCY_DAYS = 1
 
 # ============================================================================
 # STRATEGY IMPLEMENTATION
@@ -137,7 +137,7 @@ class ORBStrategy(TradingStrategy):
         """
         logger.info("Scanning for best stock candidate...")
 
-        top_symbol = self.scanner.get_top_candidate()
+        top_symbol = self.scanner.get_top_candidate(current_date=current_date)
 
         if top_symbol:
             if top_symbol != self.trading_symbol:
@@ -151,9 +151,12 @@ class ORBStrategy(TradingStrategy):
             current_datetime = self._get_current_datetime(current_date)
             self.last_scan_date = current_datetime.date() if isinstance(current_datetime, datetime) else current_datetime
         else:
-            logger.warning("No suitable stock found in scan. Using SPY as fallback.")
-            self.trading_symbol = "SPY"
-            self.atr = SureshotSDK.ATR("SPY", ATR_PERIOD)
+            # logger.warning("No suitable stock found in scan. Using SPY as fallback.")
+            # self.trading_symbol = "SPY"
+            # self.atr = SureshotSDK.ATR("SPY", ATR_PERIOD)
+            logger.warning("No suitable stock found in scan.")
+            self.trading_symbol = None
+            self.atr = None
 
     def should_rebalance(self, current_date) -> bool:
         """
@@ -220,7 +223,7 @@ class ORBStrategy(TradingStrategy):
             return 0
 
         risk_amount = self.portfolio.cash * STOP_LOSS_RISK_SIZE
-        stop_distance = atr_value * STOP_LOSS_ATR_DISTANCE
+        stop_distance = atr_value * OPTIMIZATION_STOP_LOSS_ATR_DISTANCE
         shares = int(risk_amount / stop_distance) if stop_distance > 0 else 0
 
         return shares
@@ -257,7 +260,7 @@ class ORBStrategy(TradingStrategy):
 
         # Update ATR
         if self.atr:
-            self.atr.update(high, low, price)
+            self.atr.Update(high, low, price)
             atr_value = self.atr.get_value()
         else:
             logger.warning("ATR not initialized")
@@ -291,9 +294,18 @@ class ORBStrategy(TradingStrategy):
                     logger.info(f"Stop loss hit for {self.trading_symbol}: ${price:.2f} <= ${self.stop_loss_price:.2f}")
                     self.sell_all(self.trading_symbol)
                     return
+            if self.position_direction == 'SHORT':
+                if price <= self.take_profit_price:
+                    logger.info(f"Take profit hit for {self.trading_symbol}: ${price:.2f} <= ${self.take_profit_price:.2f}")
+                    self.sell_all(self.trading_symbol)
+                    return
+                elif price >= self.stop_loss_price:
+                    logger.info(f"Stop loss hit for {self.trading_symbol}: ${price:.2f} >= ${self.stop_loss_price:.2f}")
+                    self.sell_all(self.trading_symbol)
+                    return
 
             # End of day exit
-            if current_time >= time(15, 45):
+            if current_time >= time(15, 59):
                 logger.info(f"End of day exit for {self.trading_symbol}")
                 self.sell_all(self.trading_symbol)
                 return
@@ -307,13 +319,30 @@ class ORBStrategy(TradingStrategy):
                 if position_size > 0:
                     self.entry_price = price
                     self.position_direction = 'LONG'
-                    self.take_profit_price = price + (atr_value * TAKE_PROFIT_ATR_DISTANCE)
-                    self.stop_loss_price = price - (atr_value * STOP_LOSS_ATR_DISTANCE)
+                    self.take_profit_price = price + (atr_value * OPTIMIZATION_TAKE_PROFIT_ATR_DISTANCE)
+                    self.stop_loss_price = price - (atr_value * OPTIMIZATION_STOP_LOSS_ATR_DISTANCE)
 
                     logger.info(f"Entering LONG {self.trading_symbol}: {position_size} shares @ ${price:.2f}")
-                    logger.info(f"TP: ${self.take_profit_price:.2f}, SL: ${self.stop_loss_price:.2f}")
+                    logger.info(f"Take Profit: ${self.take_profit_price:.2f}, Stop Loss: ${self.stop_loss_price:.2f}")
 
                     self.buy_all(self.trading_symbol)
+            
+            elif low < self.opening_range_low:
+                logger.info(f"Short breakout for {self.trading_symbol}: ${low:.2f} < ${self.opening_range_low:.2f}")
+
+                position_size = self.calculate_position_size(price, atr_value)
+
+                if position_size != 0:
+                    self.entry_price = price
+                    self.position_direction = 'SHORT'
+                    self.take_profit_price = price - (atr_value * OPTIMIZATION_TAKE_PROFIT_ATR_DISTANCE)
+                    self.stop_loss_price = price + (atr_value * OPTIMIZATION_STOP_LOSS_ATR_DISTANCE)
+
+                    logger.info(f"Entering SHORT {self.trading_symbol}: -{position_size} shares @ ${price:.2f}")
+                    logger.info(f"Take Profit: ${self.take_profit_price:.2f}, Stop Loss: ${self.stop_loss_price:.2f}")
+
+                    self.sell_short_all(self.trading_symbol)
+
 
     def on_data(self, price=None, current_date=None):
         """
