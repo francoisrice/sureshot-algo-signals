@@ -53,6 +53,7 @@ class PortfolioState(Base):
     id = Column(Integer, primary_key=True, index=True)
     strategy_name = Column(String, index=True, nullable=False, unique=True)
     cash = Column(Float, nullable=False)
+    collateral = Column(Float, nullable=False) # Cash on margin to hold for short selling
     allocated_capital = Column(Float, nullable=False)  # Capital allocated to this strategy
     initial_cash = Column(Float, nullable=False)
     total_value = Column(Float, nullable=False)

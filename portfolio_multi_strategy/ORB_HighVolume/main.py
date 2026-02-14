@@ -297,17 +297,20 @@ class ORBStrategy(TradingStrategy):
             if self.position_direction == 'SHORT':
                 if price <= self.take_profit_price:
                     logger.info(f"Take profit hit for {self.trading_symbol}: ${price:.2f} <= ${self.take_profit_price:.2f}")
-                    self.sell_all(self.trading_symbol)
+                    self.close_short_all(self.trading_symbol)
                     return
                 elif price >= self.stop_loss_price:
                     logger.info(f"Stop loss hit for {self.trading_symbol}: ${price:.2f} >= ${self.stop_loss_price:.2f}")
-                    self.sell_all(self.trading_symbol)
+                    self.close_short_all(self.trading_symbol)
                     return
 
             # End of day exit
             if current_time >= time(15, 59):
                 logger.info(f"End of day exit for {self.trading_symbol}")
-                self.sell_all(self.trading_symbol)
+                if self.position_direction == 'LONG':
+                    self.sell_all(self.trading_symbol)
+                if self.position_direction == 'SHORT':
+                    self.close_short_all(self.trading_symbol)
                 return
         else:
             # Entry logic: Long breakout

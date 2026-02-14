@@ -348,6 +348,132 @@ async def buy_all(trade: TradeRequest, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.post("/short_sell_all", response_model=TradeResponse, status_code=201)
+async def short_sell_all(trade: TradeRequest, db: Session = Depends(get_db)):
+    """
+    Short sell as many shares as possible with strategy's allocated capital
+
+    Args:
+        trade: TradeRequest with strategy_name, symbol, and current price
+        db: Database session
+
+    Returns:
+        TradeResponse with order details and updated portfolio state
+    """
+    try:
+        # Get or create portfolio state
+        portfolio = db.query(PortfolioState).filter(
+            PortfolioState.strategy_name == trade.strategy_name
+        ).first()
+
+        if not portfolio:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Portfolio not found for strategy {trade.strategy_name}. Create portfolio first."
+            )
+
+        # IMPORTANT: Use allocated_capital (not total cash) to determine buying power
+        # This ensures each strategy only uses their allocated portion
+        # available_cash = min(portfolio.cash, portfolio.allocated_capital)
+        available_cash = portfolio.cash
+
+        # Calculate shares to buy based on allocated capital
+        shares_to_buy = int(available_cash // trade.price)
+
+        if shares_to_buy <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Insufficient allocated capital. Available: ${available_cash:.2f}, Allocated: ${portfolio.allocated_capital:.2f}, Price: ${trade.price:.2f}"
+            )
+
+        total_cost = shares_to_buy * trade.price
+
+        # Determine trading mode and execute trade
+        trading_mode = get_trading_mode()
+
+        if trading_mode == "PAPER":
+            # Paper trade - just log it
+            trade_result = execute_paper_trade("SELL", trade.symbol, -shares_to_buy, trade.price)
+        else:  # LIVE
+            # Live trade - call IBKR
+            trade_result = execute_live_trade("SELL", trade.symbol, shares_to_buy, trade.price)
+
+        # Create order record
+        order = Order(
+            strategy_name=trade.strategy_name,
+            symbol=trade.symbol,
+            order_type="SELL",
+            quantity=-shares_to_buy,
+            price=trade.price,
+            order_value=total_cost,
+            status=trade_result["status"],
+            trading_mode=trading_mode,
+            ibkr_order_id=trade_result["ibkr_order_id"],
+            execution_timestamp=trade_result["execution_timestamp"]
+        )
+        db.add(order)
+
+        # Update portfolio state
+        portfolio.collateral = portfolio.cash + total_cost
+        portfolio.cash -= total_cost
+        portfolio.invested = True
+        portfolio.position_locked = True  # Lock position so it won't be rebalanced
+        portfolio.total_value = portfolio.cash
+
+        # Update or create position
+        position = db.query(Position).filter(
+            Position.strategy_name == trade.strategy_name,
+            Position.symbol == trade.symbol
+        ).first()
+
+        if position:
+            # TODO: You can't short if you have a BUY position. Put in a check.
+            #   Reduce buy position if trying to short with BUY position
+            # Update average price
+            total_shares = position.quantity - shares_to_buy
+            total_cost_basis = (position.quantity * position.avg_price) + total_cost
+            position.avg_price = total_cost_basis / total_shares
+            position.quantity = total_shares
+            position.current_price = trade.price
+            position.market_value = total_shares * trade.price
+        else:
+            position = Position(
+                strategy_name=trade.strategy_name,
+                symbol=trade.symbol,
+                quantity=-shares_to_buy,
+                avg_price=trade.price,
+                current_price=trade.price,
+                market_value=total_cost
+            )
+            db.add(position)
+
+        # Update total portfolio value
+        portfolio.total_value += position.market_value
+
+        db.commit()
+        db.refresh(order)
+
+        logger.info(f"SHORT_SELL_ALL executed: {trade.strategy_name} sold {shares_to_buy} {trade.symbol} @ ${trade.price:.2f} using allocated capital ${portfolio.allocated_capital:.2f}")
+
+        return TradeResponse(
+            order_id=order.id,
+            strategy_name=trade.strategy_name,
+            symbol=trade.symbol,
+            order_type="SELL",
+            quantity=-shares_to_buy,
+            price=trade.price,
+            order_value=total_cost,
+            allocated_capital=portfolio.allocated_capital,
+            remaining_cash=portfolio.cash,
+            invested=portfolio.invested
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in short_sell_all: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/sell_all", response_model=TradeResponse, status_code=201)
 async def sell_all(trade: TradeRequest, db: Session = Depends(get_db)):
@@ -450,5 +576,110 @@ async def sell_all(trade: TradeRequest, db: Session = Depends(get_db)):
         raise
     except Exception as e:
         logger.error(f"Error in sell_all: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/close_short_all", response_model=TradeResponse, status_code=201)
+async def close_short_all(trade: TradeRequest, db: Session = Depends(get_db)):
+    """
+    Buy to close short shares of a symbol
+
+    Args:
+        trade: TradeRequest with strategy_name, symbol, and current price
+        db: Database session
+
+    Returns:
+        TradeResponse with order details and updated portfolio state
+    """
+    try:
+        # Get portfolio state
+        portfolio = db.query(PortfolioState).filter(
+            PortfolioState.strategy_name == trade.strategy_name
+        ).first()
+
+        if not portfolio:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Portfolio not found for strategy {trade.strategy_name}"
+            )
+
+        # Get position
+        position = db.query(Position).filter(
+            Position.strategy_name == trade.strategy_name,
+            Position.symbol == trade.symbol
+        ).first()
+
+        if not position or position.quantity <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"No position found for {trade.symbol} in strategy {trade.strategy_name}"
+            )
+
+        shares_to_sell = position.quantity
+        total_proceeds = shares_to_sell * trade.price
+
+        # Determine trading mode and execute trade
+        trading_mode = get_trading_mode()
+
+        if trading_mode == "PAPER":
+            # Paper trade - just log it
+            trade_result = execute_paper_trade("BUY", trade.symbol, -shares_to_sell, trade.price)
+        else:  # LIVE
+            # Live trade - call IBKR
+            trade_result = execute_live_trade("BUY", trade.symbol, shares_to_sell, trade.price)
+
+        # Create order record
+        order = Order(
+            strategy_name=trade.strategy_name,
+            symbol=trade.symbol,
+            order_type="BUY",
+            quantity=-shares_to_sell,
+            price=trade.price,
+            order_value=total_proceeds,
+            status=trade_result["status"],
+            trading_mode=trading_mode,
+            ibkr_order_id=trade_result["ibkr_order_id"],
+            execution_timestamp=trade_result["execution_timestamp"]
+        )
+        db.add(order)
+
+        # Update portfolio state
+        portfolio.collateral += total_proceeds 
+        portfolio.cash = portfolio.collateral
+        portfolio.total_value = portfolio.cash
+
+        # Check if still invested in any positions (before deleting current position)
+        remaining_positions = db.query(Position).filter(
+            Position.strategy_name == trade.strategy_name,
+            Position.id != position.id
+        ).count()
+        portfolio.invested = remaining_positions > 0
+        portfolio.position_locked = remaining_positions > 0  # Unlock when all positions closed
+
+        # Remove position
+        db.delete(position)
+
+        db.commit()
+        db.refresh(order)
+
+        logger.info(f"CLOSE_SHORT_ALL executed: {trade.strategy_name} bought {shares_to_sell} {trade.symbol} @ ${trade.price:.2f}")
+
+        return TradeResponse(
+            order_id=order.id,
+            strategy_name=trade.strategy_name,
+            symbol=trade.symbol,
+            order_type="BUY",
+            quantity=-shares_to_sell,
+            price=trade.price,
+            order_value=total_proceeds,
+            allocated_capital=portfolio.allocated_capital,
+            remaining_cash=portfolio.cash,
+            invested=portfolio.invested
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in close_short_all: {e}")
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
