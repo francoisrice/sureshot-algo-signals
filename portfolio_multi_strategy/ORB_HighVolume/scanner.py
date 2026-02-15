@@ -49,6 +49,8 @@ class StockScanner:
         self.price_cache = price_cache
 
     def get_sp500_tickers(self) -> List[str]:
+        logger.error("scanner.get_sp500_tickers, Error: Not Implemented")
+        raise Exception("Tried to pull S&P 500 tickers but the scan isn't implemented.")
         """
         Get list of S&P 500 tickers to scan
 
@@ -167,6 +169,8 @@ class StockScanner:
             return None
 
     def scan(self, max_candidates: int = 5, current_date = None) -> List[Dict]:
+        # TODO: Rename this or add "filter"/"sort" to scan by
+        # volume, ATR, Price, ... and filter by other metrics
         """
         Scan for top candidates
 
@@ -212,10 +216,11 @@ class StockScanner:
             }
 
             candidates.append(candidate)
-            logger.info(f"  {symbol}: Price ${price:.2f}, ATR {atr_percent:.2f}%, Vol {avg_volume:,.0f}, Score {candidate['score']:,.0f}")
+            logger.info(f"  {symbol}: Price ${price:.2f}, ATR {atr_percent:.2f}%, Vol {avg_volume:,.0f}")
 
         # Sort by score (volume * volatility) and take top N
-        candidates.sort(key=lambda x: x['score'], reverse=True)
+        # TODO: Make this a field set by a passed in Arg
+        candidates.sort(key=lambda x: x['avg_volume'], reverse=True)
         top_candidates = candidates[:max_candidates]
 
         logger.info(f"Found {len(top_candidates)} candidates:")

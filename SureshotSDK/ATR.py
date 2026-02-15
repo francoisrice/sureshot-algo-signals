@@ -137,7 +137,7 @@ class ATR:
         if len(self.true_ranges) >= self.period:
             # Use Simple Moving Average for ATR
             self.atr_value = sum(list(self.true_ranges)[-self.period:]) / self.period
-        elif len(self.true_ranges) > 0 and self.atr_value is not None:
+        elif len(self.true_ranges) > 0:
             # Partial calculation before full warmup
             self.atr_value = sum(list(self.true_ranges)) / len(self.true_ranges)
 
