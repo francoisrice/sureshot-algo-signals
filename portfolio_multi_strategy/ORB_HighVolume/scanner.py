@@ -70,13 +70,13 @@ class StockScanner:
         """Fetch price data from Polygon API (used as callback for cache)"""
         return self.polygon_client.get_historical_data(
             symbol=symbol,
-            start_date=start_date.strftime("%Y-%m-%d"),
-            end_date=end_date.strftime("%Y-%m-%d"),
+            start_date=start_date,
+            end_date=end_date,
             timeframe=timeframe
         )
 
     def _get_bars(self, symbol: str, start_date: datetime, end_date: datetime, timeframe: str = "1d") -> List[Dict]:
-        """Get price bars using cache if available, otherwise fetch directly"""
+        """Get price bars using cache if available, otherwise fetch and cache"""
         if self.price_cache:
             cached = self.price_cache.get(
                 symbol, start_date, end_date, timeframe,
@@ -85,7 +85,12 @@ class StockScanner:
             if cached:
                 return cached
 
-        return self._fetch_from_api(symbol, start_date, end_date, timeframe)
+        bars = self._fetch_from_api(symbol, start_date, end_date, timeframe)
+
+        if bars and self.price_cache:
+            self.price_cache.set(symbol, start_date, end_date, timeframe, bars)
+
+        return bars
 
     def calculate_atr_percent(self, symbol: str, end_date: datetime = None) -> Optional[float]:
         """
@@ -112,10 +117,10 @@ class StockScanner:
             atr = SureshotSDK.ATR(symbol, self.atr_period)
 
             for bar in bars:
-                atr.Update(bar['high'], bar['low'], bar['close'])
+                atr.Update(bar.get('h', bar.get('high')), bar.get('l', bar.get('low')), bar.get('c', bar.get('close')))
 
             atr_value = atr.get_value()
-            current_price = bars[-1]['close']
+            current_price = bars[-1].get('c', bars[-1].get('close'))
 
             if current_price == 0:
                 return None
@@ -157,18 +162,21 @@ class StockScanner:
             logger.error(f"Error getting volume for {symbol}: {e}")
             return None
 
-    def get_current_price(self, symbol: str, current_date = None) -> Optional[float]:
+    def get_current_price(self, symbol: str, current_date: datetime = None) -> Optional[float]:
         """Get current price for symbol"""
         try:
             if current_date:
-                return self._get_bars(symbol, current_date, current_date, "1d")
+                bars = self._get_bars(symbol, current_date, current_date, "1d")
+                if bars:
+                    return bars[-1].get('c', bars[-1].get('close'))
+                return None
             price = self.polygon_client.get_current_price(symbol)
             return price
         except Exception as e:
             logger.error(f"Error getting price for {symbol}: {e}")
             return None
 
-    def scan(self, max_candidates: int = 5, current_date = None) -> List[Dict]:
+    def scan(self, max_candidates: int = 5, current_date:datetime = None) -> List[Dict]:
         # TODO: Rename this or add "filter"/"sort" to scan by
         # volume, ATR, Price, ... and filter by other metrics
         """
@@ -183,7 +191,8 @@ class StockScanner:
         logger.info(f"Scanning for stocks with min price ${self.min_price}, min ATR {self.min_atr_percent}%...")
 
         # tickers = self.get_sp500_tickers()
-        tickers = fetch_all_nasdaq_symbols()
+        # tickers = fetch_all_nasdaq_symbols()
+        tickers = ['GOOGL','AAPL','TSLA','F','T']
         candidates = []
 
         for symbol in tickers:
@@ -229,7 +238,7 @@ class StockScanner:
 
         return top_candidates
 
-    def get_top_candidate(self, current_date = None) -> Optional[str]:
+    def get_top_candidate(self, current_date: datetime = None) -> Optional[str]:
         """
         Get the single best candidate symbol
 

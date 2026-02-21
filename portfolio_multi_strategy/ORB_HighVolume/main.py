@@ -16,7 +16,7 @@ Modes:
 
 import SureshotSDK
 from SureshotSDK import TradingStrategy
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, date
 import logging
 import os
 from typing import Optional
@@ -36,7 +36,8 @@ OPTIMIZATION_TAKE_PROFIT_ATR_DISTANCE = 0.3  # 30% of ATR
 OPTIMIZATION_STOP_LOSS_ATR_DISTANCE = 0.5    # 50% of ATR
 STOP_LOSS_RISK_SIZE = 0.01      # Risk 1% per trade
 MIN_STOCK_PRICE = 5.0
-MIN_ATR_PERCENT = 10.0
+# MIN_ATR_PERCENT = 10.0
+MIN_ATR_PERCENT = 0.0
 LEVERAGE = 4.0
 
 # Trading mode
@@ -62,7 +63,7 @@ REBALANCE_FREQUENCY_DAYS = 1
 # STRATEGY IMPLEMENTATION
 # ============================================================================
 
-class ORBStrategy(TradingStrategy):
+class ORBHighVolume(TradingStrategy):
     """
     Opening Range Breakout strategy with daily stock scanning
     """
@@ -80,8 +81,10 @@ class ORBStrategy(TradingStrategy):
             atr_period=ATR_PERIOD
         )
 
-        # Current trading symbol (changes based on scan)
-        self.trading_symbol = None
+        # Default tradingSymbol to SPY (changes each day based on scan)
+        self.tradingSymbol = 'SPY'
+
+        self.timeframe = '1m'
 
         # ATR indicator (will be reset when symbol changes)
         self.atr = None
@@ -125,10 +128,11 @@ class ORBStrategy(TradingStrategy):
         """Initialize for BACKTEST mode"""
         self.set_start_date(start_date)
         self.set_end_date(end_date)
+        # self.scan_for_stock(start_date)
 
         logger.info(f"Initialized {self.name} for backtesting")
 
-    def scan_for_stock(self, current_date=None):
+    def scan_for_stock(self, current_date: datetime = None):
         """
         Scan for best stock to trade
 
@@ -140,22 +144,22 @@ class ORBStrategy(TradingStrategy):
         top_symbol = self.scanner.get_top_candidate(current_date=current_date)
 
         if top_symbol:
-            if top_symbol != self.trading_symbol:
-                logger.info(f"Selected new symbol: {top_symbol} (was: {self.trading_symbol})")
-                self.trading_symbol = top_symbol
+            if top_symbol != self.tradingSymbol:
+                logger.info(f"Selected new symbol: {top_symbol} (was: {self.tradingSymbol})")
+                self.tradingSymbol = top_symbol
 
                 # Reset ATR for new symbol
-                self.atr = SureshotSDK.ATR(self.trading_symbol, ATR_PERIOD)
+                self.atr = SureshotSDK.ATR(self.tradingSymbol, ATR_PERIOD)
 
             # Use passed date if available, otherwise get current date
             current_datetime = self._get_current_datetime(current_date)
             self.last_scan_date = current_datetime.date() if isinstance(current_datetime, datetime) else current_datetime
         else:
             # logger.warning("No suitable stock found in scan. Using SPY as fallback.")
-            # self.trading_symbol = "SPY"
+            # self.tradingSymbol = "SPY"
             # self.atr = SureshotSDK.ATR("SPY", ATR_PERIOD)
             logger.warning("No suitable stock found in scan.")
-            self.trading_symbol = None
+            self.tradingSymbol = None
             self.atr = None
 
     def should_rebalance(self, current_date) -> bool:
@@ -175,7 +179,7 @@ class ORBStrategy(TradingStrategy):
         days_since_rebalance = (current_date - self.last_rebalance_date).days
         return days_since_rebalance >= REBALANCE_FREQUENCY_DAYS
 
-    def reset_daily_state(self, current_date=None):
+    def reset_daily_state(self, current_date: datetime=None):
         """
         Reset state for new trading day
 
@@ -208,14 +212,14 @@ class ORBStrategy(TradingStrategy):
         if len(bars) == 0:
             return
 
-        highs = [bar['high'] for bar in bars]
-        lows = [bar['low'] for bar in bars]
+        highs = [bar['h'] for bar in bars]
+        lows = [bar['l'] for bar in bars]
 
         self.opening_range_high = max(highs)
         self.opening_range_low = min(lows)
         self.opening_range_calculated = True
 
-        logger.info(f"Opening range for {self.trading_symbol}: High ${self.opening_range_high:.2f}, Low ${self.opening_range_low:.2f}")
+        logger.info(f"Opening range for {self.tradingSymbol}: High ${self.opening_range_high:.2f}, Low ${self.opening_range_low:.2f}")
 
     def calculate_position_size(self, price: float, atr_value: float) -> int:
         """Calculate position size based on 1% risk"""
@@ -236,8 +240,10 @@ class ORBStrategy(TradingStrategy):
             bar: Minute bar data dictionary
             current_datetime: Current datetime (passed by backtesting engine, None in LIVE mode)
         """
+        # logger.info("Date: "+str(current_datetime))
         # Get current datetime (use passed datetime in backtest, real time in live)
         current_datetime = self._get_current_datetime(current_datetime)
+        self.current_date = current_datetime
         current_time = current_datetime.time()
         current_date = current_datetime.date()
 
@@ -251,12 +257,12 @@ class ORBStrategy(TradingStrategy):
             return
 
         # Skip if no trading symbol selected
-        if not self.trading_symbol:
+        if not self.tradingSymbol:
             return
 
-        price = bar['close']
-        high = bar['high']
-        low = bar['low']
+        price = bar['c']
+        high = bar['h']
+        low = bar['l']
 
         # Update ATR
         if self.atr:
@@ -271,51 +277,59 @@ class ORBStrategy(TradingStrategy):
             if not hasattr(self, 'opening_bars'):
                 self.opening_bars = []
             self.opening_bars.append(bar)
+            logger.info("Added bar to opening range")
             return
 
         # Calculate opening range if not yet done
         if not self.opening_range_calculated and hasattr(self, 'opening_bars'):
             self.calculate_opening_range(self.opening_bars)
             del self.opening_bars
+            logger.info("Deleted opening bars")
 
         # Skip if opening range not calculated
         if not self.opening_range_calculated:
+            logger.info("Opening range not calculated")
             return
+
+        # TODO: Add a flag to only trade once per day; 
+        #   reset_daily_state() -> completedTrade = False
+        #   sell_all(), close_short_all() -> completedTrade = True
 
         # Position management
         if self.invested:
             # Check exit conditions
             if self.position_direction == 'LONG':
                 if price >= self.take_profit_price:
-                    logger.info(f"Take profit hit for {self.trading_symbol}: ${price:.2f} >= ${self.take_profit_price:.2f}")
-                    self.sell_all(self.trading_symbol)
+                    logger.info(f"Take profit hit for {self.tradingSymbol}: ${price:.2f} >= ${self.take_profit_price:.2f}")
+                    self.sell_all(self.tradingSymbol)
                     return
                 elif price <= self.stop_loss_price:
-                    logger.info(f"Stop loss hit for {self.trading_symbol}: ${price:.2f} <= ${self.stop_loss_price:.2f}")
-                    self.sell_all(self.trading_symbol)
+                    logger.info(f"Stop loss hit for {self.tradingSymbol}: ${price:.2f} <= ${self.stop_loss_price:.2f}")
+                    self.sell_all(self.tradingSymbol)
                     return
             if self.position_direction == 'SHORT':
                 if price <= self.take_profit_price:
-                    logger.info(f"Take profit hit for {self.trading_symbol}: ${price:.2f} <= ${self.take_profit_price:.2f}")
-                    self.close_short_all(self.trading_symbol)
+                    logger.info(f"Take profit hit for {self.tradingSymbol}: ${price:.2f} <= ${self.take_profit_price:.2f}")
+                    self.close_short_all(self.tradingSymbol)
                     return
                 elif price >= self.stop_loss_price:
-                    logger.info(f"Stop loss hit for {self.trading_symbol}: ${price:.2f} >= ${self.stop_loss_price:.2f}")
-                    self.close_short_all(self.trading_symbol)
+                    logger.info(f"Stop loss hit for {self.tradingSymbol}: ${price:.2f} >= ${self.stop_loss_price:.2f}")
+                    self.close_short_all(self.tradingSymbol)
                     return
 
             # End of day exit
-            if current_time >= time(15, 59):
-                logger.info(f"End of day exit for {self.trading_symbol}")
+            if current_time >= time(15, 55):
+                logger.info(f"End of day exit for {self.tradingSymbol}")
                 if self.position_direction == 'LONG':
-                    self.sell_all(self.trading_symbol)
+                    self.sell_all(self.tradingSymbol)
                 if self.position_direction == 'SHORT':
-                    self.close_short_all(self.trading_symbol)
+                    self.close_short_all(self.tradingSymbol)
                 return
         else:
             # Entry logic: Long breakout
             if high > self.opening_range_high:
-                logger.info(f"Long breakout for {self.trading_symbol}: ${high:.2f} > ${self.opening_range_high:.2f}")
+                logger.info("Price above the HIGH")
+                logger.info(f"Long breakout for {self.tradingSymbol}: ${high:.2f} > ${self.opening_range_high:.2f}")
 
                 position_size = self.calculate_position_size(price, atr_value)
 
@@ -325,13 +339,14 @@ class ORBStrategy(TradingStrategy):
                     self.take_profit_price = price + (atr_value * OPTIMIZATION_TAKE_PROFIT_ATR_DISTANCE)
                     self.stop_loss_price = price - (atr_value * OPTIMIZATION_STOP_LOSS_ATR_DISTANCE)
 
-                    logger.info(f"Entering LONG {self.trading_symbol}: {position_size} shares @ ${price:.2f}")
+                    logger.info(f"Entering LONG {self.tradingSymbol}: {position_size} shares @ ${price:.2f}")
                     logger.info(f"Take Profit: ${self.take_profit_price:.2f}, Stop Loss: ${self.stop_loss_price:.2f}")
 
-                    self.buy_all(self.trading_symbol)
+                    self.buy_all(self.tradingSymbol)
             
             elif low < self.opening_range_low:
-                logger.info(f"Short breakout for {self.trading_symbol}: ${low:.2f} < ${self.opening_range_low:.2f}")
+                logger.info("Price below the LOW")
+                logger.info(f"Short breakout for {self.tradingSymbol}: ${low:.2f} < ${self.opening_range_low:.2f}")
 
                 position_size = self.calculate_position_size(price, atr_value)
 
@@ -341,10 +356,10 @@ class ORBStrategy(TradingStrategy):
                     self.take_profit_price = price - (atr_value * OPTIMIZATION_TAKE_PROFIT_ATR_DISTANCE)
                     self.stop_loss_price = price + (atr_value * OPTIMIZATION_STOP_LOSS_ATR_DISTANCE)
 
-                    logger.info(f"Entering SHORT {self.trading_symbol}: -{position_size} shares @ ${price:.2f}")
+                    logger.info(f"Entering SHORT {self.tradingSymbol}: -{position_size} shares @ ${price:.2f}")
                     logger.info(f"Take Profit: ${self.take_profit_price:.2f}, Stop Loss: ${self.stop_loss_price:.2f}")
 
-                    self.sell_short_all(self.trading_symbol)
+                    self.sell_short_all(self.tradingSymbol)
 
 
     def on_data(self, price=None, current_date=None):
@@ -360,14 +375,14 @@ class ORBStrategy(TradingStrategy):
     def run(self):
         """Run strategy"""
         logger.info(f"Strategy {self.name} is running in {self.trading_mode} mode...")
-        logger.info(f"Current symbol: {self.trading_symbol}")
+        logger.info(f"Current symbol: {self.tradingSymbol}")
 
 
 # ============================================================================
 # MAIN ENTRY POINT
 # ============================================================================
 
-def main(strategy: ORBStrategy):
+def main(strategy: ORBHighVolume):
     """Main loop for LIVE trading"""
     logger.info(f"Starting {strategy.name} strategy monitoring...")
     logger.info(f"Trading Mode: {strategy.trading_mode}")
@@ -380,7 +395,7 @@ def main(strategy: ORBStrategy):
 
     while strategy.running:
         try:
-            logger.info(f"Monitoring {strategy.trading_symbol}...")
+            logger.info(f"Monitoring {strategy.tradingSymbol}...")
             strategy.idle_seconds(60)
 
         except KeyboardInterrupt:
@@ -390,7 +405,7 @@ def main(strategy: ORBStrategy):
 
 
 if __name__ == "__main__":
-    strategy = ORBStrategy()
+    strategy = ORBHighVolume()
 
     if TRADING_MODE == "BACKTEST":
         logger.info("Strategy initialized for BACKTEST mode")

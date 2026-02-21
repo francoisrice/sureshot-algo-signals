@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, List, Dict
 from .BacktestEngine import BacktestEngine
 from .Portfolio import Portfolio
 
@@ -106,23 +106,11 @@ class BacktestRunner:
             return None
 
         logger.info(f"Processing {len(data)} trading days...")
-
-        # Process each bar
-        # TODO: Abstract this to its own function, to find it more easily 
-        for i, candle in enumerate(data):
-            # Get current date and price
-            current_date = datetime.fromtimestamp(candle['t'] / 1000)
-            current_price = candle['c']
-
-            # Record current equity
-            self.engine.record_equity(current_date, {position_symbol: current_price}, self.strategy.api_url)
-
-            # Call strategy's on_data method with current price and date
-            try:
-                self.strategy.on_data(price=current_price, current_date=current_date)
-            except Exception as e:
-                logger.error(f"Error in strategy.on_data() on {current_date.date()}: {e}")
-                continue
+        if self.strategy.timeframe == '1m':
+            # logger.info(f"Processing {len(data) / 390} trading days...")
+            self._process_intraday_data(data)
+        else: 
+            self._process_daily_data(data)
 
         logger.info("Backtest execution completed")
         self.strategy.backtest_close()
@@ -134,6 +122,45 @@ class BacktestRunner:
         self.engine.save_results()
 
         return self.engine.results
+    
+    def _process_daily_data(self, data: List[Dict]):
+        # Process each bar
+        for i, candle in enumerate(data):
+            # Get current date and price
+            current_date = datetime.fromtimestamp(candle['t'] / 1000)
+            current_price = candle['c']
+
+            # Record current equity
+            self.engine.record_equity(current_date, {self.strategy.positionSymbol: current_price}, self.strategy.api_url)
+
+            # Call strategy's on_data method with current price and date
+            try:
+                self.strategy.on_data(price=current_price, current_date=current_date)
+            except Exception as e:
+                logger.error(f"Error in strategy.on_data() on {current_date.date()}: {e}")
+                continue
+
+    def _process_intraday_data(self, data: List[Dict]):
+        for i, candle in enumerate(data):
+            # Get current date and price
+            current_datetime = datetime.fromtimestamp(candle['t'] / 1000)
+            self.strategy.reset_daily_state(current_datetime)
+            minuteData = self.engine.get_historical_data(
+                self.strategy.tradingSymbol, current_datetime, current_datetime+timedelta(days=1), self.strategy.timeframe
+            )
+            # logger.info(minuteData)
+            for j, minuteCandle in enumerate(minuteData):
+                current_dateminute = datetime.fromtimestamp(minuteCandle['t'] / 1000)
+                current_price = minuteCandle['c']
+                # Call strategy's on_data method with current price and date
+                try:
+                    self.strategy.on_minute_bar(bar=minuteCandle, current_datetime=current_dateminute)
+                except Exception as e:
+                    logger.error(f"Error in strategy.on_minute_bar() on {current_dateminute.date()} at {current_dateminute.time()}: {e}")
+                    continue
+                
+            self.engine.record_equity(current_datetime, {self.strategy.tradingSymbol: current_price}, self.strategy.api_url)
+            
 
     def get_equity_curve(self):
         """

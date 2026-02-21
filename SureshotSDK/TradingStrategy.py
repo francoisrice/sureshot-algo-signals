@@ -9,8 +9,9 @@ from .Portfolio import Portfolio
 from .Polygon import PolygonClient
 
 class TradingStrategy:
-    def __init__(self, portfolio: Portfolio = None, strategy_name: str = None, api_url: str = None):
+    def __init__(self, portfolio: Portfolio = None, strategy_name: str = None, api_url: str = None, timeframe: str = '1d'):
         self.tasks = []
+        self.timeframe = timeframe
         self.running = False
         # self.portfolio = Portfolio()
         self.portfolio = portfolio

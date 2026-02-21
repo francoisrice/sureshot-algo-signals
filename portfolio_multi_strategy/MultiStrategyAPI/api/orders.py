@@ -348,8 +348,8 @@ async def buy_all(trade: TradeRequest, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/short_sell_all", response_model=TradeResponse, status_code=201)
-async def short_sell_all(trade: TradeRequest, db: Session = Depends(get_db)):
+@router.post("/sell_short_all", response_model=TradeResponse, status_code=201)
+async def sell_short_all(trade: TradeRequest, db: Session = Depends(get_db)):
     """
     Short sell as many shares as possible with strategy's allocated capital
 
@@ -453,7 +453,7 @@ async def short_sell_all(trade: TradeRequest, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(order)
 
-        logger.info(f"SHORT_SELL_ALL executed: {trade.strategy_name} sold {shares_to_buy} {trade.symbol} @ ${trade.price:.2f} using allocated capital ${portfolio.allocated_capital:.2f}")
+        logger.info(f"SELL_SHORT_ALL executed: {trade.strategy_name} sold {shares_to_buy} {trade.symbol} @ ${trade.price:.2f} using allocated capital ${portfolio.allocated_capital:.2f}")
 
         return TradeResponse(
             order_id=order.id,
@@ -471,7 +471,7 @@ async def short_sell_all(trade: TradeRequest, db: Session = Depends(get_db)):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in short_sell_all: {e}")
+        logger.error(f"Error in sell_short_all: {e}")
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
