@@ -2,7 +2,7 @@ import requests
 import os
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Union, Tuple
 
 logging.basicConfig(level=logging.INFO)
@@ -92,6 +92,133 @@ class PolygonClient:
             logger.error(f"Error fetching current price from Polygon: {e}")
             return None
         
+    def get_historical_price(self, symbol: str, currentDate: datetime, timeframe: str = '1m') -> Optional[float]:
+        """
+        Fetch historical price from Massive API
+
+        Args:
+            symbol: Stock symbol
+            currentDate: trading datetime to check
+            timeframe: Timeframe ('1d', '1h', '5m', etc.)
+
+        Returns:
+            Float of price at that minute
+        """
+
+        def _most_recent_close(symbol: str, currentDate: datetime) -> Optional[float]:
+            """
+            Fetch data 1 week before past date and return latest close
+
+            Args:
+                symbol: Stock symbol
+                currentDate: trading datetime to check
+
+            Returns:
+                Float of price at the latest close
+            """
+            
+            multiplier = 1
+            timespan = 'day'
+            end_str = str(int(currentDate.timestamp()))
+            previousWeekDatetime = currentDate - timedelta(weeks=1)
+            start_str = str(int(previousWeekDatetime.timestamp()))
+            url = f"{self.base_url}/v2/aggs/ticker/{symbol}/range/{multiplier}/{timespan}/{start_str}/{end_str}"
+
+            params = {
+                'adjusted': 'true',
+                'sort': 'asc',
+                'limit': 50000,
+                'apikey': self.api_key
+            }
+            try:
+                self._rate_limit()
+                response = self.session.get(url, params=params)
+                response.raise_for_status()
+
+                data = response.json()
+
+                if 'results' in data:
+                    mostRecentClose = data['results'][-1]['c']
+                    return mostRecentClose
+                else:
+                    logger.debug(f"Polygon API response: {data}")
+                    return None
+                
+            except requests.RequestException as e:
+                logger.error(f"Error fetching historical price from Polygon: {e}")
+                # If rate limited, wait longer and retry once
+                if '429' in str(e):
+                    logger.warning("Rate limit hit, waiting 12 seconds before retry...")
+                    time.sleep(12)
+                    try:
+                        response = self.session.get(url, params=params)
+                        response.raise_for_status()
+                        data = response.json()
+                        if 'results' in data:
+                            mostRecentClose = data['results'][-1]['c']
+                            return mostRecentClose
+                    except:
+                        pass
+                return None
+
+        # Map timeframe to Polygon multiplier and timespan
+        timeframe_map = {
+            '1d': (1, 'day'),
+            '1h': (1, 'hour'),
+            '5m': (5, 'minute'),
+            '15m': (15, 'minute'),
+            '30m': (30, 'minute'),
+            '1m': (1, 'minute')
+        }
+
+        multiplier, timespan = timeframe_map.get(timeframe, (1, 'minute'))
+
+        # Format dates for Polygon API
+        end_str = str(int(currentDate.timestamp()))
+        startDate = currentDate - timedelta(minutes=1)
+        start_str = str(int(startDate.timestamp()))
+
+        # Construct Polygon API URL
+        url = f"{self.base_url}/v2/aggs/ticker/{symbol}/range/{multiplier}/{timespan}/{start_str}/{end_str}"
+
+        params = {
+            'adjusted': 'true',
+            'sort': 'asc',
+            'limit': 50000,
+            'apikey': self.api_key
+        }
+
+        try:
+            self._rate_limit()
+            response = self.session.get(url, params=params)
+            response.raise_for_status()
+
+            data = response.json()
+
+            if 'results' in data:
+                mostRecentClose = data['results'][-1]['c']
+                return mostRecentClose
+            else:
+                logger.debug(f"Polygon API response: {data}")
+                return _most_recent_close(symbol,currentDate)
+
+        except requests.RequestException as e:
+            logger.error(f"Error fetching historical data from Polygon: {e}")
+            # If rate limited, wait longer and retry once
+            if '429' in str(e):
+                logger.warning("Rate limit hit, waiting 12 seconds before retry...")
+                time.sleep(12)
+                try:
+                    response = self.session.get(url, params=params)
+                    response.raise_for_status()
+                    data = response.json()
+                    if 'results' in data:
+                        mostRecentClose = data['results'][-1]['c']
+                        return mostRecentClose
+                except:
+                    pass
+            return None
+        
     def get_single_day_price(self, symbol: str, date: datetime) -> Optional[float]:
         """
         Get the historical price for a symbol
@@ -154,8 +281,8 @@ class PolygonClient:
         multiplier, timespan = timeframe_map.get(timeframe, (1, 'day'))
 
         # Format dates for Polygon API
-        start_str = start_date.strftime('%Y-%m-%d')
-        end_str = end_date.strftime('%Y-%m-%d')
+        start_str = str(int(start_date.timestamp()))
+        end_str = str(int(end_date.timestamp()))
 
         # Construct Polygon API URL
         url = f"{self.base_url}/v2/aggs/ticker/{symbol}/range/{multiplier}/{timespan}/{start_str}/{end_str}"

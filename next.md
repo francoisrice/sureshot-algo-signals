@@ -6,6 +6,8 @@ Optimization & Backtesting are now usable. Configure them for more strategy type
     - Implement ORB strategy
         _ Add /orders/short_sell_all to MultiStrategyAPI
 
+TradingStrategy.historical_price_fetcher was fetching day bars and needs minute prices to trade correctly
+  -> Refactor this; get_historical_price is available in polygon_client
 
 - Add a fast moving strategy to the portfolio for Forward testing
     - Need source for real-time minute data (not financially viable through Massive)

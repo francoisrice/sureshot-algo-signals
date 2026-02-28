@@ -101,8 +101,10 @@ class TradingStrategy:
 
     def backtest_close(self):
         """Close out position in BACKTEST mode"""
-        if self.invested:
+        if self.invested and hasattr(self,'positionSymbol'):
             self.sell_all(self.positionSymbol)
+        if self.invested and hasattr(self,'tradingSymbol'):
+            self.sell_all(self.tradingSymbol)
 
     def stop(self):
         """Stop the scheduler"""
@@ -142,7 +144,7 @@ class TradingStrategy:
             Current price of the stock or None if unavailable
         """
         try:
-            price = self.polygon_client.get_single_day_price(symbol, date)
+            price = self.polygon_client.get_historical_price(symbol, date, '1m')            
             if price is not None:
                 self.logger.info(f"Fetched historical price for {symbol}: ${price:.2f}")
                 return price

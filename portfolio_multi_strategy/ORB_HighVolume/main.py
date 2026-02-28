@@ -128,7 +128,7 @@ class ORBHighVolume(TradingStrategy):
         """Initialize for BACKTEST mode"""
         self.set_start_date(start_date)
         self.set_end_date(end_date)
-        # self.scan_for_stock(start_date)
+        self.scan_for_stock(start_date)
 
         logger.info(f"Initialized {self.name} for backtesting")
 
@@ -194,10 +194,11 @@ class ORBHighVolume(TradingStrategy):
         current_datetime = self._get_current_datetime(current_date)
         date_obj = current_datetime.date() if isinstance(current_datetime, datetime) else current_datetime
 
+        # TODO: Fix if-condition to make scan dynamic
         # Check if should scan for new stock
-        if self.should_rebalance(date_obj):
-            self.scan_for_stock(current_date)
-            self.last_rebalance_date = date_obj
+        # if self.should_rebalance(date_obj):
+        self.scan_for_stock(current_date)
+        self.last_rebalance_date = date_obj
 
     def is_market_open_time(self, current_time: time) -> bool:
         """Check if within market hours"""

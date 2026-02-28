@@ -48,6 +48,9 @@ class StockScanner:
         self.polygon_client = SureshotSDK.PolygonClient()
         self.price_cache = price_cache
 
+    def get_rus2000_tickers(self) -> List[str]:
+        pass
+
     def get_sp500_tickers(self) -> List[str]:
         logger.error("scanner.get_sp500_tickers, Error: Not Implemented")
         raise Exception("Tried to pull S&P 500 tickers but the scan isn't implemented.")
@@ -166,7 +169,7 @@ class StockScanner:
         """Get current price for symbol"""
         try:
             if current_date:
-                bars = self._get_bars(symbol, current_date, current_date, "1d")
+                bars = self._get_bars(symbol, current_date - timedelta(weeks=1), current_date, "1m")
                 if bars:
                     return bars[-1].get('c', bars[-1].get('close'))
                 return None
@@ -207,7 +210,7 @@ class StockScanner:
             # Calculate ATR%
             atr_percent = self.calculate_atr_percent(symbol, current_date)
             if not atr_percent or atr_percent < self.min_atr_percent:
-                logger.debug(f"  {symbol}: ATR% {atr_percent:.2f}% below minimum")
+                logger.debug(f"  {symbol}: ATR% {atr_percent}% below minimum")
                 continue
 
             # Get average volume

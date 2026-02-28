@@ -609,7 +609,7 @@ async def close_short_all(trade: TradeRequest, db: Session = Depends(get_db)):
             Position.symbol == trade.symbol
         ).first()
 
-        if not position or position.quantity <= 0:
+        if not position or position.quantity == 0:
             raise HTTPException(
                 status_code=400,
                 detail=f"No position found for {trade.symbol} in strategy {trade.strategy_name}"
