@@ -12,6 +12,8 @@ The strategy will be dynamically imported and run in backtest mode.
 
 import os
 import sys
+import signal
+import asyncio
 import logging
 from datetime import datetime
 import importlib
@@ -25,12 +27,16 @@ from SureshotSDK import BacktestRunner
 
 # Portfolio and strategy selection
 PORTFOLIO = "portfolio_multi_strategy"
-STRATEGY = "IncredibleLeverage_SPXL"  # Options: IncredibleLeverage_SPXL, ORB_SPY, NakedWheel_SPY
+# STRATEGY = "IncredibleLeverage_SPXL"  # Options: IncredibleLeverage_SPXL, ORB_SPY, NakedWheel_SPY
+STRATEGY = "ORB_HighVolume"  # Options: IncredibleLeverage_SPXL, ORB_SPY, NakedWheel_SPY
 
 # Backtest date range
-START_DATE = datetime(2021, 2, 1)
-END_DATE = datetime(2025, 12, 31)
+# START_DATE = datetime(2023, 6, 1)
+# START_DATE = datetime(2025, 12, 1)
 # END_DATE = datetime(2025, 12, 31)
+
+START_DATE = datetime(2025, 5, 1)
+END_DATE = datetime(2025, 9, 30)
 
 # Initial capital
 INITIAL_CASH = 100000
@@ -48,12 +54,16 @@ LOG_LEVEL = logging.INFO
 
 logging.basicConfig(
     level=LOG_LEVEL,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('backtest.log'),
+        logging.StreamHandler(sys.stdout)
+    ]
 )
 logger = logging.getLogger(__name__)
 
 
-def run_backtest():
+async def run_backtest():
     """
     Dynamically import and run the specified strategy in backtest mode
     """
@@ -176,19 +186,60 @@ def run_backtest():
         logger.error(f"Error running backtest: {e}", exc_info=True)
         return None
 
+async def main():
+    
+    def signal_handler(signum, frame):
+        logger.info(f"Received signal {signum}, initiating shutdown...")
+        sys.exit(1)
+
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
+    try:
+ 
+        print("\n")
+        print("╔" + "═" * 78 + "╗")
+        print("║" + " " * 25 + "BACKTEST RUNNER" + " " * 38 + "║")
+        print("╚" + "═" * 78 + "╝")
+        print("\n")
+
+        results = await run_backtest()
+
+        if results:
+            print("\n✓ Backtest completed successfully!\n")
+            sys.exit(0)
+        else:
+            print("\n✗ Backtest failed. Check logs for details.\n")
+            sys.exit(1)
+
+    except KeyboardInterrupt:
+        logger.info("Keyboard interrupt received")
+    except Exception as e:
+        logger.error(f"Fatal error: {e}")
+        return 1
+    
+    return 0
 
 if __name__ == "__main__":
-    print("\n")
-    print("╔" + "═" * 78 + "╗")
-    print("║" + " " * 25 + "BACKTEST RUNNER" + " " * 38 + "║")
-    print("╚" + "═" * 78 + "╝")
-    print("\n")
-
-    results = run_backtest()
-
-    if results:
-        print("\n✓ Backtest completed successfully!\n")
+    try:
+        # Run the async main function
+        exit_code = asyncio.run(main())
+        sys.exit(exit_code)
+    except KeyboardInterrupt:
+        print("\nGracefully shutting down...")
         sys.exit(0)
-    else:
-        print("\n✗ Backtest failed. Check logs for details.\n")
-        sys.exit(1)
+
+    # print("\n")
+    # print("╔" + "═" * 78 + "╗")
+    # print("║" + " " * 25 + "BACKTEST RUNNER" + " " * 38 + "║")
+    # print("╚" + "═" * 78 + "╝")
+    # print("\n")
+
+    # results = run_backtest()
+
+    # if results:
+    #     print("\n✓ Backtest completed successfully!\n")
+    #     sys.exit(0)
+    # else:
+    #     print("\n✗ Backtest failed. Check logs for details.\n")
+    #     sys.exit(1)

@@ -9,6 +9,8 @@ thoughts.md
 .backtest_cache/
 backtest_results/
 quantconnect_templates/
+temp/
+data/
 
 automation/.venv
 automation/__pycache__/
