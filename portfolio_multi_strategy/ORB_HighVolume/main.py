@@ -32,12 +32,14 @@ logger = logging.getLogger(__name__)
 STRATEGY_NAME = "ORB_HighVolume"
 ATR_PERIOD = 14
 OPENING_RANGE_MINUTES = 5
-OPTIMIZATION_TAKE_PROFIT_ATR_DISTANCE = 0.3  # 30% of ATR
-OPTIMIZATION_STOP_LOSS_ATR_DISTANCE = 0.5    # 50% of ATR
+OPTIMIZATION_TAKE_PROFIT_ATR_DISTANCE = 0.9  # 30% of ATR
+OPTIMIZATION_STOP_LOSS_ATR_DISTANCE = 0.3    # 50% of ATR
 STOP_LOSS_RISK_SIZE = 0.01      # Risk 1% per trade
 MIN_STOCK_PRICE = 5.0
-# MIN_ATR_PERCENT = 10.0
-MIN_ATR_PERCENT = 0.0
+SELECTION = 'avg_volume' # 'avg_volume'|'atr_percent'
+MIN_ATR_PERCENT = 10.0
+# MIN_ATR_PERCENT = 5.0
+# MIN_ATR_PERCENT = 0.0
 LEVERAGE = 4.0
 
 # Trading mode
@@ -78,13 +80,16 @@ class ORBHighVolume(TradingStrategy):
         self.scanner = StockScanner(
             min_price=MIN_STOCK_PRICE,
             min_atr_percent=MIN_ATR_PERCENT,
-            atr_period=ATR_PERIOD
+            atr_period=ATR_PERIOD,
+            selector=SELECTION # avg_volume | atr_percent
         )
 
         # Default tradingSymbol to SPY (changes each day based on scan)
         self.tradingSymbol = 'SPY'
 
         self.timeframe = '1m'
+
+        self.completedTrade = False
 
         # ATR indicator (will be reset when symbol changes)
         self.atr = None
@@ -128,7 +133,7 @@ class ORBHighVolume(TradingStrategy):
         """Initialize for BACKTEST mode"""
         self.set_start_date(start_date)
         self.set_end_date(end_date)
-        self.scan_for_stock(start_date)
+        self.scanner.trading_mode = self.trading_mode
 
         logger.info(f"Initialized {self.name} for backtesting")
 
@@ -194,6 +199,8 @@ class ORBHighVolume(TradingStrategy):
         current_datetime = self._get_current_datetime(current_date)
         date_obj = current_datetime.date() if isinstance(current_datetime, datetime) else current_datetime
 
+        self.completedTrade = False
+
         # TODO: Fix if-condition to make scan dynamic
         # Check if should scan for new stock
         # if self.should_rebalance(date_obj):
@@ -220,7 +227,10 @@ class ORBHighVolume(TradingStrategy):
         self.opening_range_low = min(lows)
         self.opening_range_calculated = True
 
-        logger.info(f"Opening range for {self.tradingSymbol}: High ${self.opening_range_high:.2f}, Low ${self.opening_range_low:.2f}")
+        generalDatetime = datetime.fromtimestamp(bars[0]['t'] / 1000)
+        day = str(generalDatetime.date())
+
+        logger.info(f" {day} - Opening range for {self.tradingSymbol}: High ${self.opening_range_high:.2f}, Low ${self.opening_range_low:.2f}")
 
     def calculate_position_size(self, price: float, atr_value: float) -> int:
         """Calculate position size based on 1% risk"""
@@ -278,23 +288,23 @@ class ORBHighVolume(TradingStrategy):
             if not hasattr(self, 'opening_bars'):
                 self.opening_bars = []
             self.opening_bars.append(bar)
-            logger.info("Added bar to opening range")
+            logger.debug("Added bar to opening range")
             return
 
         # Calculate opening range if not yet done
         if not self.opening_range_calculated and hasattr(self, 'opening_bars'):
             self.calculate_opening_range(self.opening_bars)
             del self.opening_bars
-            logger.info("Deleted opening bars")
+            logger.debug("Deleted opening bars")
 
         # Skip if opening range not calculated
         if not self.opening_range_calculated:
             logger.info("Opening range not calculated")
             return
 
-        # TODO: Add a flag to only trade once per day; 
-        #   reset_daily_state() -> completedTrade = False
-        #   sell_all(), close_short_all() -> completedTrade = True
+
+        if self.completedTrade:
+            return
 
         # Position management
         if self.invested:
@@ -303,19 +313,23 @@ class ORBHighVolume(TradingStrategy):
                 if price >= self.take_profit_price:
                     logger.info(f"Take profit hit for {self.tradingSymbol}: ${price:.2f} >= ${self.take_profit_price:.2f}")
                     self.sell_all(self.tradingSymbol)
+                    self.completedTrade = True
                     return
                 elif price <= self.stop_loss_price:
                     logger.info(f"Stop loss hit for {self.tradingSymbol}: ${price:.2f} <= ${self.stop_loss_price:.2f}")
                     self.sell_all(self.tradingSymbol)
+                    self.completedTrade = True
                     return
             if self.position_direction == 'SHORT':
                 if price <= self.take_profit_price:
                     logger.info(f"Take profit hit for {self.tradingSymbol}: ${price:.2f} <= ${self.take_profit_price:.2f}")
                     self.close_short_all(self.tradingSymbol)
+                    self.completedTrade = True
                     return
                 elif price >= self.stop_loss_price:
                     logger.info(f"Stop loss hit for {self.tradingSymbol}: ${price:.2f} >= ${self.stop_loss_price:.2f}")
                     self.close_short_all(self.tradingSymbol)
+                    self.completedTrade = True
                     return
 
             # End of day exit
@@ -323,8 +337,10 @@ class ORBHighVolume(TradingStrategy):
                 logger.info(f"End of day exit for {self.tradingSymbol}")
                 if self.position_direction == 'LONG':
                     self.sell_all(self.tradingSymbol)
+                    self.completedTrade = True
                 if self.position_direction == 'SHORT':
                     self.close_short_all(self.tradingSymbol)
+                    self.completedTrade = True
                 return
         else:
             # Entry logic: Long breakout
