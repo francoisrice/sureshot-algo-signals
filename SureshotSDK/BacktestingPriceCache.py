@@ -72,7 +72,8 @@ class BacktestingPriceCache:
         try:
             with open(cache_path, 'w') as f:
                 json.dump(data, f)
-            logger.info(f"Saved cache: {filename} ({len(data)} bars)")
+            # logger.info(f"Saved cache: {filename} ({len(data)} bars)")
+            logger.debug(f"Saved cache: {filename} ({len(data)} bars)")
         except Exception as e:
             logger.error(f"Error writing cache {filename}: {e}")
 
@@ -155,14 +156,16 @@ class BacktestingPriceCache:
 
         if not cache_info:
             # No cache exists
-            logger.info(f"Cache MISS for {symbol}_{timeframe} (no cache file)")
+            # logger.info(f"Cache MISS for {symbol}_{timeframe} (no cache file)")
+            logger.debug(f"Cache MISS for {symbol}_{timeframe} (no cache file)")
             return None
 
         cache_path, cache_start_str, cache_end_str = cache_info
         cache_start = self._str_to_date(cache_start_str)
         cache_end = self._str_to_date(cache_end_str)
 
-        logger.info(f"Found cache {cache_path.name}: {cache_start_str} to {cache_end_str}")
+        # logger.info(f"Found cache {cache_path.name}: {cache_start_str} to {cache_end_str}")
+        logger.debug(f"Found cache {cache_path.name}: {cache_start_str} to {cache_end_str}")
 
         # Load existing cache data
         cached_bars = self._load_cache_file(cache_path)
@@ -177,7 +180,8 @@ class BacktestingPriceCache:
         # Check if we need to extend backwards
         if start_date < cache_start:
             if fetch_fn:
-                logger.info(f"Extending cache backwards: {req_start_str} to {cache_start_str}")
+                # logger.info(f"Extending cache backwards: {req_start_str} to {cache_start_str}")
+                logger.debug(f"Extending cache backwards: {req_start_str} to {cache_start_str}")
                 pre_bars = fetch_fn(symbol, start_date, cache_start, timeframe)
                 if pre_bars:
                     result_bars = self._merge_bars(pre_bars, result_bars)
@@ -189,7 +193,8 @@ class BacktestingPriceCache:
         # Check if we need to extend forwards
         if end_date > cache_end:
             if fetch_fn:
-                logger.info(f"Extending cache forwards: {cache_end_str} to {req_end_str}")
+                # logger.info(f"Extending cache forwards: {cache_end_str} to {req_end_str}")
+                logger.debug(f"Extending cache forwards: {cache_end_str} to {req_end_str}")
                 post_bars = fetch_fn(symbol, cache_end, end_date, timeframe)
                 if post_bars:
                     result_bars = self._merge_bars(result_bars, post_bars)
@@ -207,7 +212,8 @@ class BacktestingPriceCache:
 
         # Filter to requested range
         filtered_bars = self._filter_bars_by_date(result_bars, start_date, end_date)
-        logger.info(f"Cache HIT for {symbol}_{timeframe}: returning {len(filtered_bars)} bars")
+        # logger.info(f"Cache HIT for {symbol}_{timeframe}: returning {len(filtered_bars)} bars")
+        logger.debug(f"Cache HIT for {symbol}_{timeframe}: returning {len(filtered_bars)} bars")
 
         return filtered_bars
 
