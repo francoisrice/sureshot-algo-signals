@@ -158,8 +158,9 @@ class BacktestRunner:
                 except Exception as e:
                     logger.error(f"Error in strategy.on_minute_bar() on {current_dateminute.date()} at {current_dateminute.time()}: {e}")
                     continue
-                
-            self.engine.record_equity(current_datetime, {self.strategy.tradingSymbol: current_price}, self.strategy.api_url)
+            
+            if self.strategy.tradingSymbol:
+                self.engine.record_equity(current_datetime, {self.strategy.tradingSymbol: current_price}, self.strategy.api_url)
             
 
     def get_equity_curve(self):
