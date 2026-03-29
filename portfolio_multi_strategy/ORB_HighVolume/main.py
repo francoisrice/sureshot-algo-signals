@@ -199,6 +199,7 @@ class ORBHighVolume(TradingStrategy):
         current_datetime = self._get_current_datetime(current_date)
         date_obj = current_datetime.date() if isinstance(current_datetime, datetime) else current_datetime
 
+        self.current_trading_date = date_obj
         self.completedTrade = False
 
         # TODO: Fix if-condition to make scan dynamic
@@ -260,7 +261,6 @@ class ORBHighVolume(TradingStrategy):
 
         # Check if new trading day
         if self.current_trading_date != current_date:
-            self.current_trading_date = current_date
             self.reset_daily_state(current_datetime)
 
         # Skip if outside market hours
