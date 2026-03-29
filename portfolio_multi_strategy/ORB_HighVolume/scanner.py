@@ -10,13 +10,17 @@ Scans for stocks meeting criteria:
 import logging
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta
-from tqdm import tqdm 
+from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import SureshotSDK
 from SureshotSDK.BacktestingPriceCache import BacktestingPriceCache
 from SureshotSDK.utils import fetch_all_nasdaq_symbols
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+_BACKTEST_CHUNK_SIZE = 10
+_MAX_SCAN_WORKERS = 100 # default: 20 
 
 
 class StockScanner:
@@ -441,7 +445,8 @@ class StockScanner:
         """Get current price for symbol"""
         try:
             if current_date:
-                bars = self._get_bars(symbol, current_date - timedelta(weeks=1), current_date, "1m")
+                # Use 1d close for backtest — already in memory, no disk I/O
+                bars = self._get_bars(symbol, current_date - timedelta(weeks=1), current_date, "1d")
                 if bars:
                     return bars[-1].get('c', bars[-1].get('close'))
                 return None
@@ -451,7 +456,57 @@ class StockScanner:
             logger.error(f"Error getting price for {symbol}: {e}")
             return None
 
-    def scan(self, max_candidates: int = 5, current_date:datetime = None) -> List[Dict]:
+    def _evaluate_ticker(self, symbol: str, current_date: datetime) -> Optional[Dict]:
+        """Evaluate a single ticker against all scan criteria."""
+        logger.debug(f"Scanning {symbol}...")
+
+        price = self.get_current_price(symbol, current_date)
+        if not price or price < self.min_price:
+            logger.debug(f"  {symbol}: Price ${price} below minimum")
+            return None
+
+        atr_percent = self.calculate_atr_percent(symbol, current_date)
+        if not atr_percent or atr_percent < self.min_atr_percent:
+            logger.debug(f"  {symbol}: ATR% {atr_percent}% below minimum")
+            return None
+
+        avg_volume = self.get_average_volume(symbol, current_date)
+        if not avg_volume:
+            logger.debug(f"  {symbol}: Unable to get volume data")
+            return None
+
+        logger.debug(f"  {symbol}: Price ${price:.2f}, ATR {atr_percent:.2f}%, Vol {avg_volume:,.0f}")
+        return {
+            'symbol': symbol,
+            'price': price,
+            'atr_percent': atr_percent,
+            'avg_volume': avg_volume,
+        }
+
+    def _scan_chunk(self, symbols: List[str], current_date: datetime, pbar=None) -> List[Dict]:
+        """Evaluate a chunk of tickers. Uses its own PolygonClient instance for thread safety."""
+        chunk_scanner = StockScanner(
+            min_price=self.min_price,
+            min_atr_percent=self.min_atr_percent,
+            atr_period=self.atr_period,
+            volume_lookback_days=self.volume_lookback_days,
+            price_cache=self.price_cache,
+            selector=self.selector,
+        )
+        results = []
+        for symbol in symbols:
+            try:
+                candidate = chunk_scanner._evaluate_ticker(symbol, current_date)
+                if candidate:
+                    results.append(candidate)
+            except Exception as e:
+                logger.error(f"Error evaluating {symbol}: {e}")
+            finally:
+                if pbar:
+                    pbar.update(1)
+        return results
+
+    def scan(self, max_candidates: int = 5, current_date: datetime = None) -> List[Dict]:
         # TODO: Rename this or add "filter"/"sort" to scan by
         # volume, ATR, Price, ... and filter by other metrics
         """
@@ -469,52 +524,35 @@ class StockScanner:
         tickers = self.get_rus2000_tickers()
         # tickers = fetch_all_nasdaq_symbols()
         # tickers = ['GOOGL','AAPL','TSLA','F','T',
-        #            'NVDA', 'TSLA', 'AMD', 'AMZN', 'MSFT', 
+        #            'NVDA', 'TSLA', 'AMD', 'AMZN', 'MSFT',
         #            'META','PLTR','BAC','F','INTC',
         #            'MU','SNDK','NFLX','JPM','C',
         #            'WFC','SOFI','SNAP']
 
-        # TODO: Parallelize scanner
-        # if BACKTEST = TRUE and len(tickers) > 100:
-        #   parallelize fetch() # 10 symbols per worker/thread
-        # if self.trading_mode and self.trading_mode != "LIVE" and len(tickers) > 100:
-        
         candidates = []
 
-        for symbol in tqdm(tickers):
-            logger.debug(f"Scanning {symbol}...")
+        if current_date is not None and len(tickers) >= 100:
+            # Parallel backtest mode: split into chunks of _BACKTEST_CHUNK_SIZE
+            chunks = [tickers[i:i + _BACKTEST_CHUNK_SIZE] for i in range(0, len(tickers), _BACKTEST_CHUNK_SIZE)]
+            max_workers = min(len(chunks), _MAX_SCAN_WORKERS)
+            logger.info(f"Parallel backtest scan: {len(tickers)} tickers → {len(chunks)} chunks, {max_workers} workers")
 
-            # Get current price
-            price = self.get_current_price(symbol, current_date)
-            if not price or price < self.min_price:
-                logger.debug(f"  {symbol}: Price ${price} below minimum")
-                continue
+            with tqdm(total=len(tickers), desc="Scanning tickers") as pbar:
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    chunk_jobs = {executor.submit(self._scan_chunk, chunk, current_date, pbar): chunk for chunk in chunks}
+                    for chunk_job in as_completed(chunk_jobs):
+                        try:
+                            candidates.extend(chunk_job.result())
+                        except Exception as e:
+                            logger.error(f"Chunk scan failed: {e}")
+        else:
+            # Sequential mode (live trading or small ticker list)
+            for symbol in tqdm(tickers):
+                candidate = self._evaluate_ticker(symbol, current_date)
+                if candidate:
+                    candidates.append(candidate)
 
-            # Calculate ATR%
-            atr_percent = self.calculate_atr_percent(symbol, current_date)
-            if not atr_percent or atr_percent < self.min_atr_percent:
-                logger.debug(f"  {symbol}: ATR% {atr_percent}% below minimum")
-                continue
-
-            # Get average volume
-            avg_volume = self.get_average_volume(symbol, current_date)
-            if not avg_volume:
-                logger.debug(f"  {symbol}: Unable to get volume data")
-                continue
-
-            candidate = {
-                'symbol': symbol,
-                'price': price,
-                'atr_percent': atr_percent,
-                'avg_volume': avg_volume # ,
-                # 'score': avg_volume * atr_percent  # Simple score: volume * volatility
-            }
-
-            candidates.append(candidate)
-            # logger.info(f"  {symbol}: Price ${price:.2f}, ATR {atr_percent:.2f}%, Vol {avg_volume:,.0f}")
-            logger.debug(f"  {symbol}: Price ${price:.2f}, ATR {atr_percent:.2f}%, Vol {avg_volume:,.0f}")
-
-        # Sort by score (volume * volatility) and take top N
+        # Sort by selector metric and return top N
         candidates.sort(key=lambda x: x[self.selector], reverse=True)
         top_candidates = candidates[:max_candidates]
 

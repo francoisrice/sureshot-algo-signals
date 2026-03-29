@@ -2,6 +2,7 @@ import json
 import os
 import re
 import logging
+import threading
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Callable
 from pathlib import Path
@@ -27,6 +28,36 @@ class BacktestingPriceCache:
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(exist_ok=True)
         logger.info(f"Price cache initialized at {self.cache_dir}")
+        self._index = {}  # data structure: {(symbol, timeframe): (path, start_str, end_str)}
+        self._index_lock = threading.Lock()
+        self._data_cache = {}  # data structure: {(symbol, timeframe): List[Dict]} — eagerly loaded for 1d
+        self._build_index()
+        self._preload_1d_data()
+
+    def _build_index(self):
+        """Scan cache directory once at startup to build in-memory path lookup index."""
+        for filename in os.listdir(self.cache_dir):
+            parsed = self._parse_cache_filename(filename)
+            if parsed:
+                symbol, timeframe, start_str, end_str = parsed
+                self._index[(symbol, timeframe)] = (self.cache_dir / filename, start_str, end_str)
+        logger.debug(f"Cache index built: {len(self._index)} entries")
+
+    def _preload_1d_data(self):
+        """Eagerly load all 1d cache files into memory for zero-latency lookups."""
+        loaded = 0
+        for (symbol, timeframe), (path, _, _) in self._index.items():
+            if timeframe == '1d':
+                bars = self._load_cache_file(path)
+                if bars:
+                    self._data_cache[(symbol, timeframe)] = bars
+                    loaded += 1
+        logger.debug(f"Preloaded {loaded} 1d cache files into memory")
+
+    def _update_index(self, symbol: str, timeframe: str, path: Path, start_str: str, end_str: str):
+        """Update a single index entry after a cache file is written."""
+        with self._index_lock:
+            self._index[(symbol, timeframe)] = (path, start_str, end_str)
 
     def _parse_cache_filename(self, filename: str) -> Optional[Tuple[str, str, str, str]]:
         """
@@ -48,13 +79,7 @@ class BacktestingPriceCache:
         Returns:
             Tuple of (path, start_date, end_date) or None if not found
         """
-        for filename in os.listdir(self.cache_dir):
-            parsed = self._parse_cache_filename(filename)
-            if parsed:
-                file_symbol, file_tf, start_str, end_str = parsed
-                if file_symbol == symbol and file_tf == timeframe:
-                    return (self.cache_dir / filename, start_str, end_str)
-        return None
+        return self._index.get((symbol, timeframe))
 
     def _load_cache_file(self, cache_path: Path) -> List[Dict]:
         """Load price data from cache file"""
@@ -167,8 +192,8 @@ class BacktestingPriceCache:
         # logger.info(f"Found cache {cache_path.name}: {cache_start_str} to {cache_end_str}")
         logger.debug(f"Found cache {cache_path.name}: {cache_start_str} to {cache_end_str}")
 
-        # Load existing cache data
-        cached_bars = self._load_cache_file(cache_path)
+        # Load existing cache data — use in-memory cache for 1d, disk for 1m
+        cached_bars = self._data_cache.get((symbol, timeframe)) or self._load_cache_file(cache_path)
         if not cached_bars:
             return None
 
@@ -207,8 +232,12 @@ class BacktestingPriceCache:
         if cache_updated:
             # Remove old cache file
             cache_path.unlink()
-            # Save new consolidated cache
+            # Save new consolidated cache and update index
             self._save_cache_file(symbol, timeframe, new_start_str, new_end_str, result_bars)
+            new_path = self.cache_dir / f"{symbol}_{timeframe}_{new_start_str}_{new_end_str}.json"
+            self._update_index(symbol, timeframe, new_path, new_start_str, new_end_str)
+            if timeframe == '1d':
+                self._data_cache[(symbol, timeframe)] = result_bars
 
         # Filter to requested range
         filtered_bars = self._filter_bars_by_date(result_bars, start_date, end_date)
@@ -239,7 +268,7 @@ class BacktestingPriceCache:
 
         if cache_info:
             cache_path, cache_start_str, cache_end_str = cache_info
-            existing_bars = self._load_cache_file(cache_path)
+            existing_bars = self._data_cache.get((symbol, timeframe)) or self._load_cache_file(cache_path)
 
             # Merge data
             merged = self._merge_bars(existing_bars, data)
@@ -251,11 +280,19 @@ class BacktestingPriceCache:
             # Remove old cache file
             cache_path.unlink()
 
-            # Save merged data
+            # Save merged data and update index
             self._save_cache_file(symbol, timeframe, new_start_str, new_end_str, merged)
+            new_path = self.cache_dir / f"{symbol}_{timeframe}_{new_start_str}_{new_end_str}.json"
+            self._update_index(symbol, timeframe, new_path, new_start_str, new_end_str)
+            if timeframe == '1d':
+                self._data_cache[(symbol, timeframe)] = merged
         else:
-            # No existing cache, create new
+            # No existing cache, create new and add to index
             self._save_cache_file(symbol, timeframe, req_start_str, req_end_str, data)
+            new_path = self.cache_dir / f"{symbol}_{timeframe}_{req_start_str}_{req_end_str}.json"
+            self._update_index(symbol, timeframe, new_path, req_start_str, req_end_str)
+            if timeframe == '1d':
+                self._data_cache[(symbol, timeframe)] = data
 
     def clear(self):
         """Clear all cached data"""
