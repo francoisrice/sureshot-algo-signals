@@ -178,8 +178,11 @@ def analyze_file(filepath: str) -> dict:
     trades = match_trades(orders)
 
     pnls = [t.pnl for t in trades]
+    returns = [t.return_pct for t in trades]
     wins = [p for p in pnls if p > 0]
     losses = [p for p in pnls if p <= 0]
+    win_pct = [r for r in returns if r > 0]
+    loss_pct = [r for r in returns if r <= 0]
 
     return {
         'filepath': filepath,
@@ -190,8 +193,10 @@ def analyze_file(filepath: str) -> dict:
         'losing_trades': len(losses),
         'total_pnl': sum(pnls),
         'avg_pnl': sum(pnls) / len(pnls) if pnls else 0.0,
+        'avg_win': sum(win_pct) / len(win_pct) if win_pct else 0.0,
+        'avg_loss': sum(loss_pct) / len(loss_pct) if loss_pct else 0.0,
         'win_rate': len(wins) / len(trades) * 100 if trades else 0.0,
-        'avg_return_pct': sum(t.return_pct for t in trades) / len(trades) if trades else 0.0,
+        'avg_return_pct': sum(returns) / len(trades) if trades else 0.0,
     }
 
 
@@ -228,7 +233,7 @@ def print_summary(label: str, results: list):
 
 
 def main():
-    pattern = "temp/ORB_HighVolume*.json"
+    pattern = "temp/other/ORB_*.json"
     files = sorted(glob.glob(pattern))
 
     if not files:
@@ -254,6 +259,8 @@ def main():
         print(f"  Wins / Losses: {result['winning_trades']} / {result['losing_trades']}")
         print(f"  Win Rate     : {result['win_rate']:.1f}%")
         print(f"  Total PnL    : ${result['total_pnl']:+,.2f}")
+        print(f"  Avg Win%: {result['avg_win']:+,.2f}%")
+        print(f"  Avg Loss%: {result['avg_loss']:+,.2f}%")
         print(f"  Avg PnL/Trade: ${result['avg_pnl']:+,.2f}")
         print(f"  Avg Ret/Trade: {result['avg_return_pct']:+.4f}%")
         print()
