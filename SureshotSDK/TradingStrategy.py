@@ -186,7 +186,7 @@ class TradingStrategy:
         """
         self.portfolio.reset(amount)
 
-    def buy_all(self, symbol: str):
+    def buy_all(self, symbol: str, quantityOverride: int | None = None):
         """
         Buy all possible shares of a symbol with available cash
 
@@ -210,7 +210,8 @@ class TradingStrategy:
                     json={
                         "strategy_name": self.strategy_name,
                         "symbol": symbol,
-                        "price": current_price
+                        "price": current_price,
+                        "quantity": quantityOverride
                     },
                     timeout=10
                 )
@@ -272,7 +273,7 @@ class TradingStrategy:
             else:
                 self.logger.error("No API or Portfolio configured for sell_all")
 
-    def sell_short_all(self, symbol: str):
+    def sell_short_all(self, symbol: str, quantityOverride: int | None = None):
         """
         Sell short all shares of a symbol
 
@@ -296,7 +297,8 @@ class TradingStrategy:
                     json={
                         "strategy_name": self.strategy_name,
                         "symbol": symbol,
-                        "price": current_price
+                        "price": current_price,
+                        "quantity": quantityOverride
                     },
                     timeout=10
                 )

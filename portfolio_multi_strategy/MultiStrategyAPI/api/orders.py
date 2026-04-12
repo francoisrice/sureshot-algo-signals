@@ -254,7 +254,10 @@ async def buy_all(trade: TradeRequest, db: Session = Depends(get_db)):
         available_cash = portfolio.cash
 
         # Calculate shares to buy based on allocated capital
-        shares_to_buy = int(available_cash // trade.price)
+        if trade.quantity:
+            shares_to_buy = trade.quantity
+        else:
+            shares_to_buy = int(available_cash // trade.price)
 
         if shares_to_buy <= 0:
             raise HTTPException(
@@ -378,7 +381,10 @@ async def sell_short_all(trade: TradeRequest, db: Session = Depends(get_db)):
         available_cash = portfolio.cash
 
         # Calculate shares to buy based on allocated capital
-        shares_to_buy = int(available_cash // trade.price)
+        if trade.quantity:
+            shares_to_buy = trade.quantity
+        else:
+            shares_to_buy = int(available_cash // trade.price)
 
         if shares_to_buy <= 0:
             raise HTTPException(
