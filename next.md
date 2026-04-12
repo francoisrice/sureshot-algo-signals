@@ -4,15 +4,16 @@ Currently setting warm-up variables manually - need automated solution...
 
 Optimization & Backtesting are now usable. Configure them for more strategy types. While creating more strategies.
 
-ORB backtesting works, but the ORB strategy is not robust/profitable...
 
 ORB scanner is now parallelized & pulls daily bars from memory (~76MB). Allows for processing ~200 stocks/second from cache.
 
-- Find regime where ORB is profitable
-    - Andrew Aziz: does he have clues on profitable ORB?
-    -> Try trading just TQQQ & SPXL
-- Run simultaneous backtests and optimization -> Run backtests and optimization on cloud infra
-- Short Iron Condor/Butterfly
+Implemented ORB with TQQQ - Backtests and optimizations look profitable
+
+**1. Run ORB and IncredibleLeverage LIVE**
+**1. Run multiple strategies and optimizations at the same time <- Cloud infrastrucuture with multiple nodes and container clusters**
+
+- Create date-range integration tests for IncredibleLeverageSPXL, ORB_HighVolume, and MultipointHillClimbing optimization
+- **Short Iron Condor/Butterfly**
 - Grid Trading
 
 - Add a fast moving strategy to the portfolio for Forward testing
