@@ -1,0 +1,28 @@
+# Scales trading-app to 1 replica at 9:30am ET on weekdays
+# TODO: This needs to start the trading strategy based on the portfolio
+
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: market-open
+  namespace: trading
+spec:
+  schedule: "30 9 * * 1-5"    # 9:30am ET Mon-Fri
+  timeZone: "America/New_York"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: trading-scaler
+          containers:
+          - name: scaler
+            image: bitnami/kubectl:latest
+            command:
+            - kubectl
+            - scale
+            - deployment/trading-app
+            - --replicas=1
+            - -n
+            - trading
+          restartPolicy: OnFailure

@@ -1,0 +1,26 @@
+# Scales trading-app to 0 replicas at 4:00pm ET on weekdays
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: market-close
+  namespace: trading
+spec:
+  schedule: "0 16 * * 1-5"    # 4:00pm ET Mon-Fri
+  timeZone: "America/New_York"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: trading-scaler
+          containers:
+          - name: scaler
+            image: bitnami/kubectl:latest
+            command:
+            - kubectl
+            - scale
+            - deployment/trading-app
+            - --replicas=0
+            - -n
+            - trading
+          restartPolicy: OnFailure

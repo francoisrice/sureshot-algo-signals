@@ -1,0 +1,8 @@
+microk8s_channel: "1.31/stable"
+microk8s_addons:
+  - dns
+  - hostpath-storage
+  - ingress
+  - metrics-server
+  - rbac
+  - registry

@@ -1,5 +1,11 @@
 # Interactive Brokers Web API / Client Portal API
 
+## Prerequisites
+
+Must have Java installed and executable
+
+## How to use
+
 - Authenticate to the API
   1. Run `bin/run.sh root/conf.yaml` from `/ibkr`
   2. From a separate process, run `python3 automation/headless_auth.py`

@@ -1,0 +1,23 @@
+- name: Configure orchestrator node
+  hosts: orchestrator
+  become: yes
+  roles:
+    - common
+    - microk8s
+    - ib-gateway
+
+  tasks:
+    - name: Allow IB Gateway ports (internal only)
+      ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+        src: 10.0.0.0/8
+      loop:
+        - "4001"
+        - "4002"
+
+    - name: Install Vultr CLI for worker management
+      pip:
+        name: vultr-python
+        executable: /opt/trading/venv/bin/pip

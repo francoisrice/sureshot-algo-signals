@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ib-gateway
+  namespace: trading
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: ib-gateway
+  template:
+    metadata:
+      labels:
+        app: ib-gateway
+    spec:
+      containers:
+      - name: ib-gateway
+        image: localhost:32000/ib-gateway:latest
+        ports:
+        - containerPort: 5000
+        env:
+        - name: IBKR_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: ib-credentials
+              key: username
+        - name: IBKR_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: ib-credentials
+              key: password
+        - name: IBKR_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: ib-credentials
+              key: otp_secret
+        - name: IBKR_ACCT_NUMBER
+          valueFrom:
+            secretKeyRef:
+              name: ib-credentials
+              key: account_number
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "200m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        livenessProbe:
+          tcpSocket:
+            port: 5000
+          initialDelaySeconds: 90
+          periodSeconds: 30
+          failureThreshold: 3

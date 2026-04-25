@@ -1,0 +1,19 @@
+- name: Stop and disable legacy host-based IBKR gateway service
+  systemd:
+    name: ibkr-gateway
+    enabled: no
+    state: stopped
+  ignore_errors: yes
+
+- name: Install Docker
+  apt:
+    name:
+      - docker.io
+      - docker-compose
+    state: present
+
+- name: Create trading secrets directory
+  file:
+    path: /opt/trading/secrets
+    state: directory
+    mode: '0700'

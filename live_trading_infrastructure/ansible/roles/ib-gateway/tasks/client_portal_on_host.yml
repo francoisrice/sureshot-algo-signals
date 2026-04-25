@@ -1,0 +1,103 @@
+- name: Install Java runtime (for Client Portal Gateway)
+  apt:
+    name:
+      - openjdk-17-jre
+    state: present
+
+- name: Install Docker (for local image builds)
+  apt:
+    name:
+      - docker.io
+      - docker-compose
+    state: present
+
+- name: Install Playwright dependencies
+  apt:
+    name:
+      - chromium-browser
+      - chromium-chromedriver
+      - python3-venv
+    state: present
+
+- name: Create trading virtualenv
+  command: python3 -m venv /opt/trading/venv
+  args:
+    creates: /opt/trading/venv/bin/pip
+
+- name: Install Python dependencies for IB auth
+  pip:
+    name:
+      - playwright
+      - pyotp
+      - kubernetes
+      - requests
+    executable: /opt/trading/venv/bin/pip
+
+- name: Install Playwright browsers
+  command: /opt/trading/venv/bin/python -m playwright install chromium
+  environment:
+    PLAYWRIGHT_BROWSERS_PATH: /opt/playwright
+
+- name: Create Client Portal Gateway directory
+  file:
+    path: /opt/trading/ibkr
+    state: directory
+    mode: '0755'
+
+- name: Deploy Client Portal Gateway files
+  synchronize:
+    src: "{{ playbook_dir }}/../../SureshotSDK/ibkr/"
+    dest: /opt/trading/ibkr/
+    delete: yes
+    rsync_opts:
+      - "--exclude=logs/"
+      - "--exclude=__pycache__/"
+      - "--exclude=*.pyc"
+      - "--exclude=automation/"
+
+- name: Make gateway startup script executable
+  file:
+    path: /opt/trading/ibkr/bin/run.sh
+    mode: '0755'
+
+- name: Create systemd service for IBKR Client Portal Gateway
+  copy:
+    dest: /etc/systemd/system/ibkr-gateway.service
+    content: |
+      [Unit]
+      Description=IBKR Client Portal Gateway
+      After=network.target
+
+      [Service]
+      Type=simple
+      WorkingDirectory=/opt/trading/ibkr
+      ExecStart=/bin/bash /opt/trading/ibkr/bin/run.sh root/conf.yaml
+      Restart=always
+      RestartSec=10
+      StandardOutput=journal
+      StandardError=journal
+
+      [Install]
+      WantedBy=multi-user.target
+
+- name: Enable and start IBKR Client Portal Gateway
+  systemd:
+    name: ibkr-gateway
+    enabled: yes
+    state: started
+    daemon_reload: yes
+
+- name: Deploy headless auth script and automation module
+  synchronize:
+    src: "{{ playbook_dir }}/../../SureshotSDK/ibkr/automation/"
+    dest: /opt/trading/automation/
+    delete: yes
+    rsync_opts:
+      - "--exclude=__pycache__/"
+      - "--exclude=*.pyc"
+
+- name: Create trading namespace secret directory
+  file:
+    path: /opt/trading/secrets
+    state: directory
+    mode: '0700'

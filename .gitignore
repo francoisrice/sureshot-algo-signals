@@ -23,3 +23,7 @@ sureshot_automation.egg-info.example/
 strategies/
 
 portfolio_IL_efficientfrontier/test-deployment.yaml
+live_trading_infrastructure/terraform/terraform.tfstate
+live_trading_infrastructure/terraform/terraform.tfstate.backup
+live_trading_infrastructure/terraform/.terraform/providers/registry.terraform.io/vultr/vultr/2.27.1/linux_amd64/README.md
+live_trading_infrastructure/terraform/.terraform.lock.hcl

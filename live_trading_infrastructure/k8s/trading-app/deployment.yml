@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trading-app
+  namespace: trading
+spec:
+  replicas: 0              # Starts at 0 — CronJob scales to 1 at market open
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: trading-app
+  template:
+    metadata:
+      labels:
+        app: trading-app
+    spec:
+      containers:
+      - name: trading-app
+        image: localhost:32000/trading-app:latest
+        env:
+        - name: IBKR_GATEWAY_URL
+          value: "https://ib-gateway-service:5000/v1/api"
+        - name: IBKR_GATEWAY_HTTP_URL
+          value: "https://ib-gateway-service:5000"
+        - name: TRADING_MODE
+          value: "live"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        volumeMounts:
+        - name: trading-logs
+          mountPath: /app/logs
+      volumes:
+      - name: trading-logs
+        persistentVolumeClaim:
+          claimName: trading-logs-pvc

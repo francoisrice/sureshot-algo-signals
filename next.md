@@ -10,6 +10,8 @@ ORB scanner is now parallelized & pulls daily bars from memory (~76MB). Allows f
 Implemented ORB with TQQQ - Backtests and optimizations look profitable
 
 **1. Run ORB and IncredibleLeverage LIVE**
+When you pick a registry, swap <YOUR_REGISTRY_TBD> in 
+  live_trading_infrastructure/README.md and update the image: fields in the two K8s deployment manifests.  
 **1. Run multiple strategies and optimizations at the same time <- Cloud infrastrucuture with multiple nodes and container clusters**
 
 - Create date-range integration tests for IncredibleLeverageSPXL, ORB_HighVolume, and MultipointHillClimbing optimization
@@ -25,6 +27,7 @@ Implemented ORB with TQQQ - Backtests and optimizations look profitable
 
 - Add vault to Prod deployment
 - Used a centralized logging service across k8s cluster
+- Integrate OpenClaw with a $$ cap to iterate through implementing strategies.
 
 ---
 

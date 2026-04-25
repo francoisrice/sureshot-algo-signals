@@ -1,0 +1,47 @@
+- name: Install MicroK8s via snap
+  snap:
+    name: microk8s
+    classic: yes
+    channel: "{{ microk8s_channel }}"
+
+- name: Wait for MicroK8s to be ready
+  command: microk8s status --wait-ready --timeout=300
+  timeout: 360
+
+- name: Add root to microk8s group
+  user:
+    name: root
+    groups: microk8s
+    append: yes
+
+- name: Enable MicroK8s addons
+  command: "microk8s enable {{ item }}"
+  loop: "{{ microk8s_addons }}"
+  register: addon_result
+  changed_when: "'Addon already enabled' not in addon_result.stdout"
+  retries: 5
+  delay: 20
+  until: addon_result is not failed
+
+- name: Set kubectl alias in .bashrc
+  lineinfile:
+    path: /root/.bashrc
+    line: "alias kubectl='microk8s kubectl'"
+    state: present
+
+- name: Export kubeconfig for remote access
+  shell: microk8s config > /root/kubeconfig.yaml
+  args:
+    creates: /root/kubeconfig.yaml
+
+- name: Allow MicroK8s Calico firewall rules
+  command: "ufw allow {{ item }}"
+  loop:
+    - "in on cali+"
+    - "out on cali+"
+
+- name: Allow K8s API port
+  ufw:
+    rule: allow
+    port: "16443"
+    proto: tcp
