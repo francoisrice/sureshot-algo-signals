@@ -70,7 +70,7 @@ so the COPY instructions can reach SureshotSDK/.
 
 ```bash
 # Set your registry — e.g. ghcr.io/your-org, docker.io/youruser, or localhost:32000
-export REGISTRY=<YOUR_REGISTRY_TBD>
+export REGISTRY=<YOUR_REGISTRY_TBD> # export REGISTRY=sureshotcapital
 
 # IB Gateway (Java Client Portal Gateway + Playwright auth)
 # Run from repo root

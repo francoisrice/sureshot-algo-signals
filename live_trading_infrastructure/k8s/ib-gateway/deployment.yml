@@ -15,9 +15,11 @@ spec:
       labels:
         app: ib-gateway
     spec:
+      nodeSelector:
+        kubernetes.io/hostname: orchestrator
       containers:
       - name: ib-gateway
-        image: localhost:32000/ib-gateway:latest
+        image: sureshotcapital/ib-gateway:latest
         ports:
         - containerPort: 5000
         env:

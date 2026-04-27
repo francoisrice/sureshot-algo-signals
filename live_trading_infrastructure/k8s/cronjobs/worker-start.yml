@@ -1,6 +1,3 @@
-# Scales trading-app to 1 replica at 9:30am ET on weekdays
-# TODO: This needs to start the trading strategy based on the portfolio
-
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -14,6 +11,8 @@ spec:
     spec:
       template:
         spec:
+          nodeSelector:
+            kubernetes.io/hostname: orchestrator
           serviceAccountName: trading-scaler
           containers:
           - name: scaler
@@ -21,7 +20,7 @@ spec:
             command:
             - kubectl
             - scale
-            - deployment/trading-app
+            - deployment/multistrategy-portfolio
             - --replicas=1
             - -n
             - trading

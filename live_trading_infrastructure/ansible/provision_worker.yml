@@ -1,0 +1,69 @@
+---
+# Provisions the ephemeral Vultr VX1 worker node, waits for it to join
+# the MicroK8s cluster, then labels it so the trading-app pod can schedule.
+#
+# Run by orchestrator system cron at 9:00am ET Mon-Fri.
+# Requires env vars: VULTR_API_KEY, VULTR_SSH_KEY_ID
+
+- name: Provision VX1 worker node
+  hosts: localhost
+  connection: local
+  become: yes
+  vars:
+    vultr_api_key: "{{ lookup('env', 'VULTR_API_KEY') }}"
+    ssh_key_id: "{{ lookup('env', 'VULTR_SSH_KEY_ID') }}"
+    worker_plan: "vx1-g-2c-8g-120s"
+    worker_region: "ewr"
+    worker_os_id: 2284
+
+  tasks:
+    - name: Generate MicroK8s join token (1 hour TTL)
+      command: microk8s add-node --token-ttl 3600 --format short
+      register: join_output
+
+    - name: Extract worker join command
+      set_fact:
+        join_cmd: "{{ join_output.stdout_lines | select('match', '.*microk8s join.*') | reject('match', '.*--worker.*') | first }}"
+
+    - name: Provision VX1 worker via Vultr API
+      uri:
+        url: "https://api.vultr.com/v2/instances"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ vultr_api_key }}"
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          label: "trading-worker"
+          plan: "{{ worker_plan }}"
+          region: "{{ worker_region }}"
+          os_id: "{{ worker_os_id }}"
+          hostname: "trading-worker"
+          ssh_key_ids: ["{{ ssh_key_id }}"]
+          backups: "disabled"
+          user_data: |
+            #!/bin/bash
+            set -e
+            apt-get update -y
+            apt-get install -y snapd python3 python3-pip docker.io
+            snap install microk8s --classic --channel=1.31/stable
+            microk8s status --wait-ready --timeout=300
+            {{ join_cmd }} --worker
+        status_code: 202
+      register: worker_response
+
+    - name: Save worker instance ID for deprovisioning
+      copy:
+        content: "{{ worker_response.json.instance.id }}"
+        dest: /opt/trading/secrets/worker_instance_id
+        mode: '0600'
+
+    - name: Wait for trading-worker node to appear in cluster
+      command: microk8s kubectl get node trading-worker
+      register: node_check
+      retries: 30
+      delay: 20
+      until: node_check.rc == 0
+
+    - name: Label worker node for trading-app scheduling
+      command: microk8s kubectl label node trading-worker trading-node=worker --overwrite

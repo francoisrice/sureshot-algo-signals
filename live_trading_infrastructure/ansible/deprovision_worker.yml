@@ -1,0 +1,44 @@
+---
+# Gracefully removes the VX1 worker from the MicroK8s cluster and destroys
+# the Vultr instance to stop hourly billing.
+#
+# Run by orchestrator system cron at 4:15pm ET Mon-Fri (after market-close CronJob).
+# Requires env vars: VULTR_API_KEY
+
+- name: Deprovision VX1 worker node
+  hosts: localhost
+  connection: local
+  become: yes
+  vars:
+    vultr_api_key: "{{ lookup('env', 'VULTR_API_KEY') }}"
+
+  tasks:
+    - name: Read worker instance ID
+      slurp:
+        src: /opt/trading/secrets/worker_instance_id
+      register: instance_id_file
+
+    - name: Set instance ID fact
+      set_fact:
+        worker_instance_id: "{{ instance_id_file.content | b64decode | trim }}"
+
+    - name: Drain worker node (evict pods gracefully)
+      command: microk8s kubectl drain trading-worker --ignore-daemonsets --delete-emptydir-data --force
+      ignore_errors: yes
+
+    - name: Remove worker node from cluster
+      command: microk8s kubectl delete node trading-worker
+      ignore_errors: yes
+
+    - name: Destroy VX1 instance via Vultr API
+      uri:
+        url: "https://api.vultr.com/v2/instances/{{ worker_instance_id }}"
+        method: DELETE
+        headers:
+          Authorization: "Bearer {{ vultr_api_key }}"
+        status_code: 204
+
+    - name: Remove instance ID file
+      file:
+        path: /opt/trading/secrets/worker_instance_id
+        state: absent

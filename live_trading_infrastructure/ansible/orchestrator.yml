@@ -7,17 +7,100 @@
     - ib-gateway
 
   tasks:
-    - name: Allow IB Gateway ports (internal only)
-      ufw:
-        rule: allow
-        port: "{{ item }}"
-        proto: tcp
-        src: 10.0.0.0/8
-      loop:
-        - "4001"
-        - "4002"
+    - name: Write Vultr API key to secrets
+      copy:
+        content: "{{ lookup('env', 'TF_VAR_vultr_api_key') }}"
+        dest: /opt/trading/secrets/vultr_api_key
+        mode: '0600'
 
-    - name: Install Vultr CLI for worker management
-      pip:
-        name: vultr-python
-        executable: /opt/trading/venv/bin/pip
+    - name: Write Vultr SSH key ID to secrets
+      copy:
+        content: "{{ lookup('env', 'TF_VAR_ssh_key_id') }}"
+        dest: /opt/trading/secrets/vultr_ssh_key_id
+        mode: '0600'
+
+    - name: Create trading log directory
+      file:
+        path: /var/log/trading
+        state: directory
+        mode: '0755'
+
+    - name: Install Ansible (for worker lifecycle playbooks)
+      apt:
+        name:
+          - ansible
+          - python3-requests
+        state: present
+
+    - name: Deploy worker lifecycle playbooks to orchestrator
+      synchronize:
+        src: "{{ playbook_dir }}/"
+        dest: /opt/trading/ansible/
+        delete: yes
+        rsync_opts:
+          - "--exclude=__pycache__/"
+          - "--exclude=*.retry"
+          - "--include=provision_worker.yml"
+          - "--include=deprovision_worker.yml"
+          - "--include=inventory/***"
+          - "--include=group_vars/***"
+          - "--include=roles/***"
+          - "--exclude=*"
+
+    - name: Set up worker provision cron (9:00am ET Mon-Fri)
+      cron:
+        name: "provision trading worker"
+        minute: "0"
+        hour: "9"
+        weekday: "1-5"
+        job: >
+          cd /opt/trading/ansible &&
+          VULTR_API_KEY=$(cat /opt/trading/secrets/vultr_api_key)
+          VULTR_SSH_KEY_ID=$(cat /opt/trading/secrets/vultr_ssh_key_id)
+          ansible-playbook provision_worker.yml
+          >> /var/log/trading/provision_worker.log 2>&1
+        user: root
+
+    - name: Set up worker deprovision cron (4:15pm ET Mon-Fri)
+      cron:
+        name: "deprovision trading worker"
+        minute: "15"
+        hour: "16"
+        weekday: "1-5"
+        job: >
+          cd /opt/trading/ansible &&
+          VULTR_API_KEY=$(cat /opt/trading/secrets/vultr_api_key)
+          ansible-playbook deprovision_worker.yml
+          >> /var/log/trading/deprovision_worker.log 2>&1
+        user: root
+
+    - name: Sync K8s manifests to orchestrator
+      synchronize:
+        src: "{{ playbook_dir }}/../k8s/"
+        dest: /opt/trading/k8s/
+        delete: yes
+        rsync_opts:
+          - "--exclude=__pycache__/"
+
+    - name: Sync multistrategy-portfolio deployment manifest
+      synchronize:
+        src: "{{ playbook_dir }}/../../portfolio_multi_strategy/deployment.yaml"
+        dest: /opt/trading/k8s/multistrategy-portfolio.yaml
+
+    - name: Apply trading namespace
+      command: microk8s kubectl apply -f /opt/trading/k8s/namespace.yml
+
+    - name: Apply RBAC
+      command: microk8s kubectl apply -f /opt/trading/k8s/rbac.yml
+
+    - name: Apply ib-gateway manifests
+      command: microk8s kubectl apply -f /opt/trading/k8s/ib-gateway/
+
+    - name: Apply trading-app PVCs
+      command: microk8s kubectl apply -f /opt/trading/k8s/trading-app/pvc.yml
+
+    - name: Apply market-open/close CronJobs
+      command: microk8s kubectl apply -f /opt/trading/k8s/cronjobs/
+
+    - name: Apply multistrategy-portfolio deployment (replicas=0, no pods until market open)
+      command: microk8s kubectl apply -f /opt/trading/k8s/multistrategy-portfolio.yaml

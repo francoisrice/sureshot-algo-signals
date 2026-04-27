@@ -15,9 +15,11 @@ spec:
       labels:
         app: trading-app
     spec:
+      nodeSelector:
+        trading-node: worker    # Only schedule on the VX1 worker node
       containers:
       - name: trading-app
-        image: localhost:32000/trading-app:latest
+        image: sureshotcapital/trading-app:latest
         env:
         - name: IBKR_GATEWAY_URL
           value: "https://ib-gateway-service:5000/v1/api"
@@ -25,13 +27,39 @@ spec:
           value: "https://ib-gateway-service:5000"
         - name: TRADING_MODE
           value: "live"
+        # IBKR credentials — used by client.py Playwright re-auth on session expiry
+        - name: IBKR_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: ib-credentials
+              key: username
+        - name: IBKR_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: ib-credentials
+              key: password
+        - name: IBKR_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: ib-credentials
+              key: otp_secret
+        - name: IBKR_ACCT_NUMBER
+          valueFrom:
+            secretKeyRef:
+              name: ib-credentials
+              key: account_number
+        - name: POLYGON_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: polygon-credentials
+              key: api_key
         resources:
           requests:
             memory: "256Mi"
             cpu: "200m"
           limits:
             memory: "1Gi"
-            cpu: "1000m"
+            cpu: "2000m"
         volumeMounts:
         - name: trading-logs
           mountPath: /app/logs

@@ -23,7 +23,8 @@ metadata:
 subjects:
 - kind: ServiceAccount
   name: trading-scaler
-roleBinding:
+  namespace: trading
+roleRef:
   kind: Role
   name: deployment-scaler
   apiGroup: rbac.authorization.k8s.io
