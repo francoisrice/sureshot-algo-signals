@@ -69,21 +69,29 @@ def execute_live_trade(order_type: str, symbol: str, quantity: float, price: flo
 
         # Place order based on type
         if order_type == "BUY":
-            order_response = ibkr_client.place_order(
+            order_response = ibkr_client.buy(
                 conid=conid,
-                quantity=quantity,
-                side="BUY",
-                order_type="LMT",
-                price=price
+                quantity=quantity
             )
+            # order_response = ibkr_client.place_order(
+            #     conid=conid,
+            #     quantity=quantity,
+            #     side="BUY",
+            #     order_type="LMT",
+            #     price=price
+            # )
         else:  # SELL
-            order_response = ibkr_client.place_order(
+            order_response = ibkr_client.sell(
                 conid=conid,
-                quantity=quantity,
-                side="SELL",
-                order_type="LMT",
-                price=price
+                quantity=quantity
             )
+            # order_response = ibkr_client.place_order(
+            #     conid=conid,
+            #     quantity=quantity,
+            #     side="SELL",
+            #     order_type="LMT",
+            #     price=price
+            # )
 
         # Extract order ID from response
         ibkr_order_id = order_response.get("orderId") if order_response else None

@@ -2,8 +2,11 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: multistrategy-portfolio
+  namespace: trading
 spec:
-  replicas: 1
+  replicas: 0              # Starts at 0 — CronJob scales to 1 at market open
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: multistrategy
@@ -12,75 +15,12 @@ spec:
       labels:
         app: multistrategy
     spec:
+      nodeSelector:
+        trading-node: worker    # Only schedule on the VX1 worker node
       containers:
-        # Strategy containers
-        - name: incredible-leverage-spxl
-          image: multistrategy:incredible-leverage-spxl
-          imagePullPolicy: Never
-          resources:
-            requests:
-              cpu: "100m"
-              memory: "128Mi"
-            limits:
-              cpu: "200m"
-              memory: "256Mi"
-          env:
-            - name: TRADING_MODE
-              value: "LIVE"
-            - name: API_URL
-              value: "http://localhost:8000"
-            - name: POLYGON_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: trading-secrets
-                  key: polygon-api-key
-
-        - name: orb-spy
-          image: multistrategy:orb-spy
-          imagePullPolicy: Never
-          resources:
-            requests:
-              cpu: "100m"
-              memory: "128Mi"
-            limits:
-              cpu: "200m"
-              memory: "256Mi"
-          env:
-            - name: TRADING_MODE
-              value: "LIVE"
-            - name: API_URL
-              value: "http://localhost:8000"
-            - name: POLYGON_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: trading-secrets
-                  key: polygon-api-key
-
-        - name: nakedwheel-spy
-          image: multistrategy:nakedwheel-spy
-          imagePullPolicy: Never
-          resources:
-            requests:
-              cpu: "100m"
-              memory: "128Mi"
-            limits:
-              cpu: "200m"
-              memory: "256Mi"
-          env:
-            - name: TRADING_MODE
-              value: "LIVE"
-            - name: API_URL
-              value: "http://localhost:8000"
-            - name: POLYGON_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: trading-secrets
-                  key: polygon-api-key
-
-        # Portfolio API container
+        # Portfolio API — manages state, executes orders via IBKR
         - name: multistrategy-api
-          image: multistrategy:api
-          imagePullPolicy: Never
+          image: sureshotcapital/multi-strategy-api:latest
           ports:
             - containerPort: 8000
           resources:
@@ -95,18 +35,59 @@ spec:
               value: "postgresql://postgres:postgres@postgres:5432/multistrategy"
             - name: TRADING_MODE
               value: "LIVE"
+            - name: IBKR_GATEWAY_URL
+              value: "https://ib-gateway-service:5000/v1/api"
+            - name: IBKR_GATEWAY_HTTP_URL
+              value: "https://ib-gateway-service:5000"
             - name: IBKR_USERNAME
               valueFrom:
                 secretKeyRef:
-                  name: trading-secrets
-                  key: ibkr-username
+                  name: ib-credentials
+                  key: username
             - name: IBKR_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: trading-secrets
-                  key: ibkr-password
+                  name: ib-credentials
+                  key: password
+            - name: IBKR_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: ib-credentials
+                  key: otp_secret
+            - name: IBKR_ACCT_NUMBER
+              valueFrom:
+                secretKeyRef:
+                  name: ib-credentials
+                  key: account_number
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 5
 
-        # PostgreSQL database
+        # ORB Aziz TQQQ strategy — submits orders to multistrategy-api via localhost
+        - name: orb-aziz-tqqq
+          image: sureshotcapital/orb-aziz-tqqq:latest
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+          env:
+            - name: TRADING_MODE
+              value: "LIVE"
+            - name: API_URL
+              value: "http://localhost:8000"
+            - name: POLYGON_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: polygon-credentials
+                  key: api_key
+
+        # PostgreSQL — portfolio state persistence
         - name: postgres
           image: postgres:14-alpine
           ports:
@@ -125,6 +106,11 @@ spec:
               value: "postgres"
             - name: POSTGRES_DB
               value: "multistrategy"
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
           volumeMounts:
             - name: postgres-storage
               mountPath: /var/lib/postgresql/data
@@ -132,15 +118,16 @@ spec:
         - name: postgres-storage
           persistentVolumeClaim:
             claimName: multistrategy-postgres-pvc
-      restartPolicy: Always
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: multistrategy-postgres-pvc
+  namespace: trading
 spec:
   accessModes:
     - ReadWriteOnce
+  storageClassName: microk8s-hostpath
   resources:
     requests:
       storage: 1Gi
@@ -149,6 +136,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: postgres
+  namespace: trading
 spec:
   selector:
     app: multistrategy
@@ -162,6 +150,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: multistrategy-api
+  namespace: trading
 spec:
   selector:
     app: multistrategy
@@ -170,17 +159,3 @@ spec:
       port: 8000
       targetPort: 8000
   type: ClusterIP
----
-# Optional: Expose API externally
-apiVersion: v1
-kind: Service
-metadata:
-  name: multistrategy-api-external
-spec:
-  selector:
-    app: multistrategy
-  ports:
-    - protocol: TCP
-      port: 8000
-      targetPort: 8000
-  type: LoadBalancer
