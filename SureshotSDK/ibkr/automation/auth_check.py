@@ -15,6 +15,11 @@ def confirm_auth():
     logging.debug(response.text)
     return response
 
+def fetch_balance():
+    response = requests.get(url=f"{GATEWAY_BASE_URL}/portfolio/accounts", verify=False)
+    logging.debug(response.text)
+    # print(response)
+    return response
 
 if __name__ == "__main__":
     try:

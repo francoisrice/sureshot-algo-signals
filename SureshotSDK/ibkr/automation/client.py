@@ -3,7 +3,6 @@ import json
 import urllib3
 import logging
 import os
-from .headless_auth import sync_login
 from .auth_check import confirm_auth
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -19,6 +18,7 @@ class RetryClient:
     def _ensure_authenticated(self):
         if confirm_auth().status_code >= 300:
             logger.warning("Session unauthenticated — re-authenticating via Playwright")
+            from .headless_auth import sync_login
             result = sync_login()
             if result != "Login Successful":
                 raise RuntimeError("IBKR re-authentication failed")
@@ -172,5 +172,26 @@ class IBKRClient:
         resp = self._client.get(f'{self.baseUrl}/portfolio/{self.account}/summary')
         return json.dumps(resp.json())
 
-    def fetch_acct_balance(self):
-        pass
+    def fetch_acct_balance(self) -> float | None:
+        """Return net liquidation value (total account value) in USD."""
+        try:
+            resp = self._client.get(f'{self.baseUrl}/portfolio/{self.account}/summary')
+            data = resp.json()
+            net_liq = data.get('netliquidation', {})
+            if net_liq.get('isNull'):
+                logger.warning("netliquidation is null in account summary")
+                return None
+            return float(net_liq['amount'])
+        except Exception as e:
+            logger.exception(f"fetch_acct_balance() failed: {e}")
+            return None
+
+if __name__ == "__main__":
+    # Manual test to make sure IBKR connection is working
+    # Must remove '.' on relative imports .auth_check and .headless_auth to run properly
+    try:
+        ibkr = IBKRClient()
+        print(ibkr._summary())
+    except requests.exceptions.ConnectionError as e:
+        logging.error('Gateway unreachable — is the Client Portal Gateway running?')
+        logging.error(e)

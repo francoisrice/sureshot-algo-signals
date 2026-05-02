@@ -3,6 +3,7 @@
 ## Prerequisites
 
 Must have Java installed and executable
+Must have an account Interactive Brokers **Pro** account
 
 ## How to use
 
