@@ -18,9 +18,12 @@ Modes:
 import SureshotSDK
 from SureshotSDK import TradingStrategy
 from datetime import datetime, time, timedelta, date
+from zoneinfo import ZoneInfo
 import logging
 import os
 from typing import Optional
+
+ET = ZoneInfo("America/New_York")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -335,25 +338,40 @@ class ORBAzizTQQQ(TradingStrategy):
 # ============================================================================
 
 def main(strategy: ORBAzizTQQQ):
-    """Main loop for LIVE trading"""
+    """Main loop for LIVE trading — polls real-time price every 60 seconds during market hours."""
     logger.info(f"Starting {strategy.name} strategy monitoring...")
     logger.info(f"Trading Mode: {strategy.trading_mode}")
     logger.info(f"API URL: {strategy.api_url}")
 
     strategy.running = True
 
-    logger.warning("ORB strategy requires minute bar streaming")
-    logger.warning("Integration with minute bar provider needed for LIVE mode")
-
     while strategy.running:
         try:
-            logger.info(f"Monitoring {strategy.tradingSymbol}...")
+            now_et = datetime.now(ET)
+            current_time = now_et.time()
+
+            if not (MARKET_OPEN <= current_time < MARKET_CLOSE):
+                logger.debug(f"Outside market hours ({current_time} ET) — sleeping 60s")
+                # TODO: should there be a break here? we can wait until the next day and let the cronjobs handle starting the nodes
+                strategy.idle_seconds(60)
+                continue
+
+            bar = strategy.real_time_price_fetcher(strategy.tradingSymbol)
+            if bar:
+                logger.debug(f"Bar for {strategy.tradingSymbol}: {bar}")
+                strategy.on_minute_bar(bar, now_et)
+            else:
+                logger.warning(f"No bar returned for {strategy.tradingSymbol}")
+
             strategy.idle_seconds(60)
 
         except KeyboardInterrupt:
             logger.info("Stopping strategy...")
             strategy.running = False
             break
+        except Exception as e:
+            logger.error(f"Error in main loop: {e}")
+            strategy.idle_seconds(60)
 
 
 if __name__ == "__main__":

@@ -18,6 +18,7 @@ class TradingStrategy:
         self.start_date = None
         self.end_date = None
         self.polygon_client = PolygonClient()
+        self._data_fetcher = None 
         self.logger = logging.getLogger(__name__)
         self.strategy_name = strategy_name or getattr(self, 'name', None)
         self.api_url = api_url or os.getenv("API_URL")
@@ -30,6 +31,8 @@ class TradingStrategy:
     def shutdown_handler(self, signum, frame):
         logging.info(f"Received signal {signum}, shutting down gracefully...")
         self.running = False
+        if self._data_fetcher is not None:
+            self._data_fetcher.close()
 
     def idle_seconds(self, sleepDuration):
         for _ in range(sleepDuration):
@@ -109,6 +112,16 @@ class TradingStrategy:
     def stop(self):
         """Stop the scheduler"""
         self.running = False
+
+    def real_time_price_fetcher(self, symbol: str) -> Optional[dict]:
+        try:
+            if self._data_fetcher is None:
+                from .DataFetcher import DataFetcherClient
+                self._data_fetcher = DataFetcherClient()
+            return self._data_fetcher.get_current_bar(symbol)
+        except Exception as e:
+            self.logger.error(f"Error fetching real-time bar for {symbol}: {e}")
+            return None
 
     def price_fetcher(self, symbol: str) -> Optional[float]:
         """

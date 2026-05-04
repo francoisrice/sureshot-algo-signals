@@ -1,4 +1,5 @@
 from .TradingStrategy import TradingStrategy
+from .DataFetcher import DataFetcherClient
 from .SMA import SMA
 from .ATR import ATR
 from .Portfolio import Portfolio
@@ -15,7 +16,7 @@ try:
     __all__ = [
         'TradingStrategy', 'ATR', 'SMA', 'Portfolio',
         'get_system_time', 'format_price', 'is_market_open',
-        'PolygonClient', 'VaultClient',
+        'PolygonClient', 'VaultClient', 'DataFetcherClient',
         'get_secret_from_vault', 'get_polygon_api_key_from_vault', 'IBKRClient',
         'BacktestEngine', 'BacktestRunner', 'BacktestingPriceCache', 'Trade'
     ]
@@ -23,6 +24,6 @@ except ImportError:
     __all__ = [
         'TradingStrategy', 'ATR', 'SMA', 'Portfolio',
         'get_system_time', 'format_price', 'is_market_open',
-        'PolygonClient', 'IBKRClient',
+        'PolygonClient', 'DataFetcherClient', 'IBKRClient',
         'BacktestEngine', 'BacktestRunner', 'BacktestingPriceCache', 'Trade'
     ]
