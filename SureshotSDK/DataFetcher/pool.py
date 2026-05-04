@@ -23,7 +23,8 @@ class DataFetcherPool:
     never permanently shrinks below pool_size.
     """
 
-    def __init__(self, pool_size: int = 30, model: str = _DEFAULT_MODEL):
+    def __init__(self, pool_size: int | None = None, model: str = _DEFAULT_MODEL):
+        pool_size = pool_size or int(os.environ.get("DATAFETCHER_POOL_SIZE", "3"))
         self._api_key = os.environ["BROWSERBASE_API_KEY"]
         self._project_id = os.environ["BROWSERBASE_PROJECT_ID"]
         self._pool_size = pool_size
@@ -33,14 +34,17 @@ class DataFetcherPool:
         self._client = AsyncStagehand(browserbase_api_key=self._api_key)
         self._session_pool: asyncio.Queue[str] = asyncio.Queue()
 
-    async def initialize(self) -> None:
-        """Pre-warm all sessions in parallel."""
-        session_ids = await asyncio.gather(
-            *[self._create_session() for _ in range(self._pool_size)]
-        )
-        for sid in session_ids:
-            await self._session_pool.put(sid)
-        logger.info(f"DataFetcherPool ready: {self._pool_size} sessions")
+    async def initialize(self, batch_size: int = 3) -> None:
+        """Pre-warm sessions in batches of 3 to respect API rate limits."""
+        for i in range(0, self._pool_size, batch_size):
+            batch = range(i, min(i + batch_size, self._pool_size))
+            session_ids = await asyncio.gather(*[self._create_session() for _ in batch])
+            for sid in session_ids:
+                await self._session_pool.put(sid)
+            logger.info(f"DataFetcherPool: {self._session_pool.qsize()}/{self._pool_size} sessions ready")
+            if i + batch_size < self._pool_size:
+                await asyncio.sleep(1)
+        logger.info(f"DataFetcherPool fully initialized: {self._pool_size} sessions")
 
     async def _create_session(self) -> str:
         response = await self._client.sessions.start(model_name=self._model)
