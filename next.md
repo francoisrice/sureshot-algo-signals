@@ -4,19 +4,13 @@ Currently setting warm-up variables manually - need automated solution...
 
 Optimization & Backtesting are now usable. Configure them for more strategy types. While creating more strategies.
 
-
 ORB scanner is now parallelized & pulls daily bars from memory (~76MB). Allows for processing ~200 stocks/second from cache.
 
 Implemented ORB with TQQQ - Backtests and optimizations look profitable
 
 **1. Run ORB and IncredibleLeverage LIVE**
-When you pick a registry, swap <YOUR_REGISTRY_TBD> in 
-  live_trading_infrastructure/README.md and update the image: fields in the two K8s deployment manifests.
-  Remaining before deployment:
-  1. Add BROWSERBASE_API_KEY and BROWSERBASE_PROJECT_ID to the K8s secrets or deployment env vars for the
-  multistrategy-api container (which owns the Browserbase session via TradingStrategy._data_fetcher)              
-  2. Build and push sureshotcapital/multi-strategy-api:latest and sureshotcapital/orb-aziz-tqqq:latest
-  3. Run the Ansible playbook to sync manifests and apply to the worker node
+  - Implement the Unsealing k8s Secrets and Vault
+  - Pull capital dynamically from broker
 **1. Run multiple strategies and optimizations at the same time <- Cloud infrastrucuture with multiple nodes and container clusters**
 
 _Refactor trading code to only reauth to IBKR when needed and only through the Client Portal container. Playwright doesn't need to be a dependency for the Portfolio or TradingStrategy container.

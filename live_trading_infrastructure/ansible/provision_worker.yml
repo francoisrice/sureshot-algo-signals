@@ -25,6 +25,39 @@
       set_fact:
         join_cmd: "{{ join_output.stdout_lines | select('match', '.*microk8s join.*') | reject('match', '.*--worker.*') | first }}"
 
+    - name: Read SSH public key
+      command: cat /root/.ssh/authorized_keys
+      register: ssh_pubkey
+      ignore_errors: yes
+
+    - name: Write user_data script to temp file
+      copy:
+        content: |
+          #!/bin/bash
+          set -e
+          # Explicitly inject SSH key in case Vultr metadata injection is skipped
+          mkdir -p /root/.ssh
+          chmod 700 /root/.ssh
+          echo "{{ ssh_pubkey.stdout_lines[0] | default('') }}" >> /root/.ssh/authorized_keys
+          chmod 600 /root/.ssh/authorized_keys
+          apt-get update -y
+          apt-get install -y snapd python3 python3-pip docker.io ufw
+          # Open ports required for K8s kubelet and Calico CNI
+          ufw allow 22/tcp
+          ufw allow 10250/tcp
+          ufw allow 10255/tcp
+          ufw allow 179/tcp
+          ufw --force enable
+          snap install microk8s --classic --channel=1.31/stable
+          microk8s status --wait-ready --timeout=300
+          {{ join_cmd }} --worker
+        dest: /tmp/worker_userdata.sh
+        mode: '0600'
+
+    - name: Base64 encode user_data (single line, no wrapping)
+      command: base64 -w 0 /tmp/worker_userdata.sh
+      register: userdata_b64
+
     - name: Provision VX1 worker via Vultr API
       uri:
         url: "https://api.vultr.com/v2/instances"
@@ -41,14 +74,7 @@
           hostname: "trading-worker"
           ssh_key_ids: ["{{ ssh_key_id }}"]
           backups: "disabled"
-          user_data: |
-            #!/bin/bash
-            set -e
-            apt-get update -y
-            apt-get install -y snapd python3 python3-pip docker.io
-            snap install microk8s --classic --channel=1.31/stable
-            microk8s status --wait-ready --timeout=300
-            {{ join_cmd }} --worker
+          user_data: "{{ userdata_b64.stdout }}"
         status_code: 202
       register: worker_response
 
@@ -61,7 +87,7 @@
     - name: Wait for trading-worker node to appear in cluster
       command: microk8s kubectl get node trading-worker
       register: node_check
-      retries: 30
+      retries: 60
       delay: 20
       until: node_check.rc == 0
 

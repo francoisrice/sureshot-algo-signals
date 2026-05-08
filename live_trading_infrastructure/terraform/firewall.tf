@@ -13,13 +13,24 @@ resource "vultr_firewall_rule" "ssh" {
   notes             = "SSH"
 }
 
-# MicroK8s inter-node cluster communication
+# Calico VXLAN overlay — pods use UDP 4789 for cross-node traffic (no VPC, public IPs only)
+resource "vultr_firewall_rule" "calico_vxlan" {
+  firewall_group_id = vultr_firewall_group.trading.id
+  protocol          = "udp"
+  ip_type           = "v4"
+  subnet            = "0.0.0.0"
+  subnet_size       = 0
+  port              = "4789"
+  notes             = "Calico VXLAN"
+}
+
+# MicroK8s cluster join — open to any IP since worker nodes join over public IPs (no VPC)
 resource "vultr_firewall_rule" "microk8s_cluster" {
   firewall_group_id = vultr_firewall_group.trading.id
   protocol          = "tcp"
   ip_type           = "v4"
-  subnet            = "10.0.0.0"
-  subnet_size       = 8
+  subnet            = "0.0.0.0"
+  subnet_size       = 0
   port              = "25000"
   notes             = "MicroK8s cluster join"
 }

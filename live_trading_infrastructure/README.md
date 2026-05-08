@@ -70,7 +70,7 @@ so the COPY instructions can reach SureshotSDK/.
 
 ```bash
 # Set your registry — e.g. ghcr.io/your-org, docker.io/youruser, or localhost:32000
-export REGISTRY=<YOUR_REGISTRY_TBD> # export REGISTRY=sureshotcapital
+export REGISTRY=sureshotcapital
 
 # IB Gateway (Java Client Portal Gateway + Playwright auth)
 # Run from repo root
@@ -113,5 +113,15 @@ microk8s kubectl apply -f k8s/trading-app/
 microk8s kubectl apply -f k8s/cronjobs/
 
 # Check everything
-microk8s kubectl get all -n trading
+microk8s kubectl get all,pvc,secret -n trading
+```
+
+## Test the setup
+
+```bash
+
+# Scale up the trading app to 1 replica anf test
+microk8s kubectl scale deployment/multistrategy-portfolio --replicas=1 -n trading
+microk8s kubectl get pods -n trading -w   # watch startup
+microk8s kubectl logs -n trading -l app=multistrategy -c data-fetcher  # confirm pool initialized    
 ```

@@ -114,23 +114,48 @@ python portfolio_multi_strategy/NakedWheel_SPY/main.py
 
 ### Kubernetes Deployment
 
-1. Create secrets:
+#### 1. Build and push Docker images (from repo root)
+
 ```bash
-kubectl create secret generic trading-secrets \
-  --from-literal=polygon-api-key=YOUR_KEY \
-  --from-literal=ibkr-username=YOUR_USERNAME \
-  --from-literal=ibkr-password=YOUR_PASSWORD
+# Multi-strategy API + DataFetcher sidecar (shared image)
+docker build -f portfolio_multi_strategy/MultiStrategyAPI/Dockerfile -t sureshotcapital/multi-strategy-api:latest .
+docker push sureshotcapital/multi-strategy-api:latest
+
+# ORB Aziz TQQQ strategy
+docker build -f portfolio_multi_strategy/ORB_Aziz_TQQQ/Dockerfile -t sureshotcapital/orb-aziz-tqqq:latest .
+docker push sureshotcapital/orb-aziz-tqqq:latest
 ```
 
-2. Deploy:
+#### 2. Create K8s secrets (run once on the orchestrator)
+
 ```bash
-kubectl apply -f portfolio_multi_strategy/deployment.yaml
+# IBKR credentials
+kubectl create secret generic ib-credentials --from-literal=username=YOUR_IBKR_USERNAME --from-literal=password=YOUR_IBKR_PASSWORD --from-literal=otp_secret=YOUR_TOTP_SECRET --from-literal=account_number=YOUR_ACCOUNT_NUMBER -n trading
+
+# Browserbase credentials (for DataFetcher real-time price scraping)
+kubectl create secret generic browserbase-credentials --from-literal=api_key=YOUR_BROWSERBASE_API_KEY --from-literal=project_id=YOUR_BROWSERBASE_PROJECT_ID -n trading
 ```
 
-3. Check status:
+#### 3. Provision the worker node (manual or automatic)
+
+The worker is provisioned automatically at 9:00am ET by a cron job on the orchestrator.
+To provision manually:
+
 ```bash
-kubectl get pods -l app=multistrategy
-kubectl logs -f deployment/multistrategy-portfolio -c multistrategy-api
+# SSH into the orchestrator
+ssh root@45.77.221.32
+cd /opt/trading/ansible
+VULTR_API_KEY=$(cat /opt/trading/secrets/vultr_api_key) VULTR_SSH_KEY_ID=$(cat /opt/trading/secrets/vultr_ssh_key_id) ansible-playbook provision_worker.yml
+```
+
+#### 4. Check status
+
+```bash
+# On the orchestrator
+kubectl get pods -n trading -o wide
+kubectl logs -n trading -l app=multistrategy -c multistrategy-api
+kubectl logs -n trading -l app=multistrategy -c data-fetcher
+kubectl logs -n trading -l app=multistrategy -c orb-aziz-tqqq
 ```
 
 ## Capital Allocation
@@ -164,12 +189,18 @@ The portfolio uses dynamic capital allocation based on risk-adjusted performance
 
 ## Environment Variables
 
-- `TRADING_MODE`: LIVE, BACKTEST, or OPTIMIZATION
-- `API_URL`: Portfolio API URL (default: http://localhost:8000)
-- `DATABASE_URL`: PostgreSQL connection string
-- `POLYGON_API_KEY`: Polygon.io API key
-- `IBKR_USERNAME`: Interactive Brokers username
-- `IBKR_PASSWORD`: Interactive Brokers password
+| Variable | Container | Description |
+|---|---|---|
+| `TRADING_MODE` | multistrategy-api, orb-aziz-tqqq | `LIVE`, `BACKTEST`, or `OPTIMIZATION` |
+| `API_URL` | orb-aziz-tqqq | Portfolio API URL (default: `http://localhost:8000`) |
+| `DATA_FETCHER_URL` | orb-aziz-tqqq | DataFetcher sidecar URL (default: `http://localhost:3100`) |
+| `DATABASE_URL` | multistrategy-api | PostgreSQL connection string |
+| `IBKR_GATEWAY_URL` | multistrategy-api | IB Gateway HTTPS URL |
+| `PORTFOLIO_STRATEGIES` | multistrategy-api | Comma-separated strategy names |
+| `PORTFOLIO_TOTAL_CAPITAL` | multistrategy-api | Total capital in USD |
+| `DATAFETCHER_POOL_SIZE` | data-fetcher | Browserbase session pool size (default: 3) |
+| `BROWSERBASE_API_KEY` | data-fetcher | Browserbase API key (from `browserbase-credentials` secret) |
+| `BROWSERBASE_PROJECT_ID` | data-fetcher | Browserbase project ID (from `browserbase-credentials` secret) |
 
 ## Testing
 
@@ -189,7 +220,7 @@ python -c "from portfolio_multi_strategy.NakedWheel_SPY.main import NakedWheelSP
 
 ## Notes
 
-- ORB requires minute bar data - only works with paid Polygon.io tier
+- Real-time prices are fetched via the DataFetcher sidecar (Stagehand + Browserbase), not Polygon
 - Naked Wheel uses Black-Scholes simulation in backtest mode
 - All strategies automatically switch between LIVE/BACKTEST/OPTIMIZATION modes
 - Position locks prevent capital reallocation during active trades

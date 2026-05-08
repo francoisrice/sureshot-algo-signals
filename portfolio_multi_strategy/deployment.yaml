@@ -39,6 +39,12 @@ spec:
               value: "https://ib-gateway-service:5000/v1/api"
             - name: IBKR_GATEWAY_HTTP_URL
               value: "https://ib-gateway-service:5000"
+            # Comma-separated strategy names — must match each strategy's STRATEGY_NAME constant
+            - name: PORTFOLIO_STRATEGIES
+              value: "ORB_Aziz_TQQQ"
+            # Hardcoded until IBKR Pro upgrade — replace with fetch_acct_balance() after upgrade
+            - name: PORTFOLIO_TOTAL_CAPITAL
+              value: "50000"
             - name: IBKR_USERNAME
               valueFrom:
                 secretKeyRef:
@@ -66,6 +72,40 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 5
 
+        # DataFetcher service — shared Stagehand session pool for real-time price scraping
+        # Reuses the multi-strategy-api image (already has stagehand + SureshotSDK installed)
+        - name: data-fetcher
+          image: sureshotcapital/multi-strategy-api:latest
+          command: ["uvicorn", "SureshotSDK.DataFetcher.service:app", "--host", "0.0.0.0", "--port", "3100"]
+          ports:
+            - containerPort: 3100
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "300m"
+              memory: "512Mi"
+          env:
+            - name: DATAFETCHER_POOL_SIZE
+              value: "3"
+            - name: BROWSERBASE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: browserbase-credentials
+                  key: api_key
+            - name: BROWSERBASE_PROJECT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: browserbase-credentials
+                  key: project_id
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3100
+            initialDelaySeconds: 30
+            periodSeconds: 10
+
         # ORB Aziz TQQQ strategy — submits orders to multistrategy-api via localhost
         - name: orb-aziz-tqqq
           image: sureshotcapital/orb-aziz-tqqq:latest
@@ -81,11 +121,8 @@ spec:
               value: "LIVE"
             - name: API_URL
               value: "http://localhost:8000"
-            - name: POLYGON_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: polygon-credentials
-                  key: api_key
+            - name: DATA_FETCHER_URL
+              value: "http://localhost:3100"
 
         # PostgreSQL — portfolio state persistence
         - name: postgres
