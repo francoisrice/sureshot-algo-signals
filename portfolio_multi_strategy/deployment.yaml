@@ -32,7 +32,7 @@ spec:
               memory: "512Mi"
           env:
             - name: DATABASE_URL
-              value: "postgresql://postgres:postgres@postgres:5432/multistrategy"
+              value: "postgresql://postgres:postgres@localhost:5432/multistrategy"
             - name: TRADING_MODE
               value: "LIVE"
             - name: IBKR_GATEWAY_URL
@@ -44,7 +44,7 @@ spec:
               value: "ORB_Aziz_TQQQ"
             # Hardcoded until IBKR Pro upgrade — replace with fetch_acct_balance() after upgrade
             - name: PORTFOLIO_TOTAL_CAPITAL
-              value: "50000"
+              value: "143"
             - name: IBKR_USERNAME
               valueFrom:
                 secretKeyRef:

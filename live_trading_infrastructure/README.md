@@ -59,9 +59,10 @@ source live_trading_infrastructure/.env.sh
 $ export ORCHESTRATOR_IP=$(terraform output -raw orchestrator_ip) # run this from /terraform
 ```
 
-cd ../
+cd ../ansible/
 ansible-playbook -i ansible/inventory/hosts.yml ansible/orchestrator.yml
-
+OR
+ORCHESTRATOR_IP=$(echo $ORCHESTRATOR_IP) ansible-playbook -i ansible/inventory/hosts.yml ansible/orchestrator.yml
 
 ## Build and push container images
 
@@ -80,23 +81,8 @@ docker build \
   .
 docker push $REGISTRY/ib-gateway:latest
 
-# Trading app
-# NOTE: the trading-app Dockerfile must include Playwright (playwright install chromium)
-# because client.py calls sync_login() directly for re-auth on request failures.
-# IBKR_GATEWAY_HTTP_URL is already set in k8s/trading-app/deployment.yml and points
-# to ib-gateway-service:5000 so Playwright knows where to navigate.
-docker build \
-  -f live_trading_infrastructure/docker/trading-app/Dockerfile \
-  -t $REGISTRY/trading-app:latest \
-  .
-docker push $REGISTRY/trading-app:latest
+# Repeat this for the portfolio & the strategy images
 ```
-
-Once pushed, update the `image:` fields in:
-- `k8s/ib-gateway/deployment.yml`
-- `k8s/trading-app/deployment.yml`
-
-to `$REGISTRY/ib-gateway:latest` and `$REGISTRY/trading-app:latest` respectively.
 
 ## Setup strategies on the orchestration node
 

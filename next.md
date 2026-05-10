@@ -35,6 +35,9 @@ _Is bitnami a good enough container image for the trading?
   - Use the backtesting & optimization to find new strategies
   - Scan the repo and test code against test scripts and delete unused code
   - Implement code into the repo for new strategies: Options, Bond carry, Futures, FundamentalsS
+  - Create docs for an unknown users using the platform
+  ---
+  - Build a user facing website & backtesting app
 
 ---
 
@@ -46,5 +49,7 @@ Backtest/Optimization Application
 
 ---
 
-- Terraform for Vault and deployments?
+- Terraform for Vault and deployments
 - Integrate 1Password, so Vault can Auto-unseal keys after restart
+- Attempted OpenClaw setup. Non-trivial time investment to setup.
+  - Potential options: 1. Laptop setup with Serverless Inference api 2. Laptop setup with OpenRouter API 

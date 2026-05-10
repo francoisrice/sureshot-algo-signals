@@ -51,3 +51,9 @@
     rule: allow
     port: "25000"
     proto: tcp
+
+- name: Allow Calico VXLAN overlay (UDP 4789 on physical interface)
+  ufw:
+    rule: allow
+    port: "4789"
+    proto: udp

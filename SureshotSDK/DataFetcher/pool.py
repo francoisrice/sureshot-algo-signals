@@ -58,42 +58,46 @@ class DataFetcherPool:
         Acquires a pooled session and releases it in the finally block.
         """
         session_id = await self._session_pool.get()
-        replacement = session_id
         try:
-            url = f"https://www.nasdaq.com/market-activity/stocks/{symbol.lower()}"
-            await self._client.sessions.navigate(id=session_id, url=url)
-
-            result = await self._client.sessions.extract(
-                id=session_id,
-                instruction="extract the price",
-            )
-
-            if not result:
-                logger.warning(f"No extraction result for {symbol}")
-                return None
-
-            if "extraction" in result.data.result:
-                raw = result.data.result.get("extraction")
-            else:
-                raw = json.loads(result.data.result)
-                raw = raw["extraction"]
-
-            price = float(raw.replace("$", ""))
-
-            now_ms = int(datetime.now().timestamp() * 1000)
-            return {"t": now_ms, "o": price, "h": price, "l": price, "c": price, "v": 0}
-
+            return await self._fetch_with_session(symbol, session_id)
         except Exception as e:
-            logger.error(f"get_current_bar('{symbol}') failed: {e} — replacing session")
+            logger.error(f"get_current_bar('{symbol}') failed: {e} — replacing session and retrying")
             try:
                 await self._client.sessions.end(id=session_id)
             except Exception:
                 pass
-            replacement = await self._create_session()
+            session_id = await self._create_session()
+            try:
+                return await self._fetch_with_session(symbol, session_id)
+            except Exception as e2:
+                logger.error(f"get_current_bar('{symbol}') retry also failed: {e2}")
+                return None
+        finally:
+            await self._session_pool.put(session_id)
+
+    async def _fetch_with_session(self, symbol: str, session_id: str) -> Optional[dict]:
+        url = f"https://www.nasdaq.com/market-activity/stocks/{symbol.lower()}"
+        await self._client.sessions.navigate(id=session_id, url=url)
+
+        result = await self._client.sessions.extract(
+            id=session_id,
+            instruction="extract the price",
+        )
+
+        if not result:
+            logger.warning(f"No extraction result for {symbol}")
             return None
 
-        finally:
-            await self._session_pool.put(replacement)
+        if "extraction" in result.data.result:
+            raw = result.data.result.get("extraction")
+        else:
+            raw = json.loads(result.data.result)
+            raw = raw["extraction"]
+
+        price = float(raw.replace("$", ""))
+
+        now_ms = int(datetime.now().timestamp() * 1000)
+        return {"t": now_ms, "o": price, "h": price, "l": price, "c": price, "v": 0}
 
     async def close(self) -> None:
         """End all pooled sessions."""
