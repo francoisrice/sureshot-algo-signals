@@ -133,6 +133,9 @@ class TradingStrategy:
         Returns:
             Current price of the stock or None if unavailable
         """
+        if self.polygon_client is None:
+            bar = self.real_time_price_fetcher(symbol)
+            return bar['c'] if bar else None
         try:
             price = self.polygon_client.get_current_price(symbol)
             if price is not None:
