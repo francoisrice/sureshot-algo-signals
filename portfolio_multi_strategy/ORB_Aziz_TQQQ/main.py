@@ -173,28 +173,28 @@ class ORBAzizTQQQ(TradingStrategy):
         logger.info(f" {day} - Opening range for {self.tradingSymbol}: High ${self.opening_range_high:.2f}, Low ${self.opening_range_low:.2f}")
 
     def calculate_position_size(self, price: float, stoplossPrice: float) -> int:
-        """Calculate position size based on 1% risk"""
-        if self.portfolio:
-            cash = self.portfolio.cash
-        elif self.api_url and self.strategy_name:
-            try:
-                import requests
-                resp = requests.get(f"{self.api_url}/portfolio/{self.strategy_name}", timeout=5)
-                cash = resp.json()["cash"]
-            except Exception as e:
-                logger.error(f"Failed to fetch cash from API: {e}")
-                return 0
-        else:
-            return 0
-
-        riskAmount = abs(price - stoplossPrice)
-        if riskAmount == 0:
-            return 0
-
-        absoluteRisk = cash * STOP_LOSS_RISK_SIZE
-        shares = int(min(absoluteRisk / riskAmount, LEVERAGE * cash / price))
-
-        return shares
+        return 1
+        # if self.portfolio:
+        #     cash = self.portfolio.cash
+        # elif self.api_url and self.strategy_name:
+        #     try:
+        #         import requests
+        #         resp = requests.get(f"{self.api_url}/portfolio/{self.strategy_name}", timeout=5)
+        #         cash = resp.json()["cash"]
+        #     except Exception as e:
+        #         logger.error(f"Failed to fetch cash from API: {e}")
+        #         return 0
+        # else:
+        #     return 0
+        #
+        # riskAmount = abs(price - stoplossPrice)
+        # if riskAmount == 0:
+        #     return 0
+        #
+        # absoluteRisk = cash * STOP_LOSS_RISK_SIZE
+        # shares = int(min(absoluteRisk / riskAmount, LEVERAGE * cash / price))
+        #
+        # return shares
 
     def on_minute_bar(self, bar: dict, current_datetime: datetime = None):
         """
