@@ -94,11 +94,18 @@ def execute_live_trade(order_type: str, symbol: str, quantity: float, price: flo
             #     price=price
             # )
 
-        # Extract order ID from response
-        ibkr_order_id = order_response.get("orderId") if order_response else None
+        # Extract order ID — IBKR returns a list after confirmation, or a dict on direct success
+        if isinstance(order_response, list) and order_response:
+            first = order_response[0]
+            ibkr_order_id = first.get("order_id") or first.get("orderId") or first.get("local_order_id")
+        elif isinstance(order_response, dict):
+            ibkr_order_id = order_response.get("order_id") or order_response.get("orderId")
+        else:
+            ibkr_order_id = None
 
         if not ibkr_order_id:
-            raise Exception("Failed to get IBKR order ID from response")
+            logger.warning(f"Order placed but could not extract order ID from response: {order_response}")
+            ibkr_order_id = "unknown"
 
         logger.info(f"IBKR Order placed: {ibkr_order_id}")
 

@@ -105,7 +105,15 @@ class IBKRClient:
         safety = 0
         while not confirmed and safety < 10:
             respData = self._order_reply(respData[0]['id'])
-            if 'id' not in respData[0]:
+            if isinstance(respData, dict):
+                if 'error' in respData:
+                    raise RuntimeError(respData['error'])
+                # Non-error dict — IBKR indicates order accepted
+                confirmed = True
+            elif isinstance(respData, list):
+                if 'id' not in respData[0]:
+                    confirmed = True
+            else:
                 confirmed = True
             safety += 1
         return respData

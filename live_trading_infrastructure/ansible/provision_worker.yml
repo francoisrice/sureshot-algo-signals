@@ -50,6 +50,12 @@
           ufw allow 179/tcp
           ufw allow 4789/udp
           ufw --force enable
+          # NAT pod CIDR (10.1.0.0/16) so pods can reach the internet.
+          # Calico manages pod routing but does not add a MASQUERADE rule when UFW is active —
+          # without this, outbound pod connections time out silently.
+          iptables -t nat -A POSTROUTING -s 10.1.0.0/16 ! -d 10.0.0.0/8 -j MASQUERADE
+          # Persist across reboots and UFW reloads by inserting into the *nat section of before.rules
+          sed -i '/^\*nat/a -A POSTROUTING -s 10.1.0.0\/16 ! -d 10.0.0.0\/8 -j MASQUERADE' /etc/ufw/before.rules
           snap install microk8s --classic --channel=1.31/stable
           microk8s status --wait-ready --timeout=300
           {{ join_cmd }} --worker
