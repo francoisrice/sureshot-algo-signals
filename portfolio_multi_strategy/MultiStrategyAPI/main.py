@@ -12,7 +12,7 @@ import logging
 from .database import init_db, SessionLocal
 from .models import PortfolioState, AllocationHistory
 from .allocation import CapitalAllocator
-from .api import orders, positions, portfolio
+from .api import orders, positions, portfolio, config
 
 # Configure logging
 logging.basicConfig(
@@ -44,6 +44,7 @@ app.add_middleware(
 app.include_router(orders.router)
 app.include_router(positions.router)
 app.include_router(portfolio.router)
+app.include_router(config.router)
 
 
 def _auto_initialize_portfolios():

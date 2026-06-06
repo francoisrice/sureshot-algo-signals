@@ -73,3 +73,10 @@ class AllocationHistory(Base):
     total_capital = Column(Float, nullable=False)
     allocations = Column(JSON, nullable=False)  # {strategy_name: {allocated, score, locked}}
     rebalance_reason = Column(String, nullable=True)
+
+class StrategyConfig(Base):
+    """LIVE vs PAPER config for each strategy"""
+    __tablename__ = "strategy_config"
+    strategy_name = Column(String,  primary_key=True, index=True, nullable=False, unique=True)
+    trading_mode = Column(String, default="PAPER", nullable=False)  # "PAPER" or "LIVE"
+    last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

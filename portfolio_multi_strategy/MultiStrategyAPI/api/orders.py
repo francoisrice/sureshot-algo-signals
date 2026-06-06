@@ -12,7 +12,7 @@ import logging
 import os
 
 from ..database import get_db
-from ..models import Order, PortfolioState, Position
+from ..models import Order, PortfolioState, Position, StrategyConfig
 from ..schemas import OrderCreate, OrderStatusUpdate, OrderResponse, TradeRequest, TradeResponse, DeleteResponse
 
 logger = logging.getLogger(__name__)
@@ -20,10 +20,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/orders", tags=["orders"])
 
 
-def get_trading_mode():
+def get_trading_mode(strategy_name: str, db: Session) -> str:
     """Get current trading mode from environment"""
-    return os.getenv("TRADING_MODE", "PAPER").upper()
-
+    config = db.query(StrategyConfig).filter(StrategyConfig.strategy_name == strategy_name).first()
+    if config:
+        return config.trading_mode.upper()
+    return "PAPER"
 
 def execute_paper_trade(order_type: str, symbol: str, quantity: float, price: float):
     """
@@ -284,7 +286,7 @@ async def buy_all(trade: TradeRequest, db: Session = Depends(get_db)):
         total_cost = shares_to_buy * trade.price
 
         # Determine trading mode and execute trade
-        trading_mode = get_trading_mode()
+        trading_mode = get_trading_mode(trade.strategy_name, db)
 
         if trading_mode == "PAPER":
             # Paper trade - just log it
@@ -411,7 +413,7 @@ async def sell_short_all(trade: TradeRequest, db: Session = Depends(get_db)):
         total_cost = shares_to_buy * trade.price
 
         # Determine trading mode and execute trade
-        trading_mode = get_trading_mode()
+        trading_mode = get_trading_mode(trade.strategy_name, db)
 
         if trading_mode == "PAPER":
             # Paper trade - just log it
@@ -537,7 +539,7 @@ async def sell_all(trade: TradeRequest, db: Session = Depends(get_db)):
         total_proceeds = shares_to_sell * trade.price
 
         # Determine trading mode and execute trade
-        trading_mode = get_trading_mode()
+        trading_mode = get_trading_mode(trade.strategy_name, db)
 
         if trading_mode == "PAPER":
             # Paper trade - just log it
@@ -641,7 +643,7 @@ async def close_short_all(trade: TradeRequest, db: Session = Depends(get_db)):
         total_proceeds = shares_to_sell * trade.price
 
         # Determine trading mode and execute trade
-        trading_mode = get_trading_mode()
+        trading_mode = get_trading_mode(trade.strategy_name, db)
 
         if trading_mode == "PAPER":
             # Paper trade - just log it
