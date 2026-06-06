@@ -42,9 +42,6 @@ spec:
             # Comma-separated strategy names — must match each strategy's STRATEGY_NAME constant
             - name: PORTFOLIO_STRATEGIES
               value: "ORB_Aziz_TQQQ"
-            # Hardcoded until IBKR Pro upgrade — replace with fetch_acct_balance() after upgrade
-            - name: PORTFOLIO_TOTAL_CAPITAL
-              value: "143"
             - name: IBKR_USERNAME
               valueFrom:
                 secretKeyRef:

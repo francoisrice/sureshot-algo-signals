@@ -49,18 +49,40 @@ app.include_router(config.router)
 
 def _auto_initialize_portfolios():
     """Seed PortfolioState rows on first startup. Skips if rows already exist."""
+    trading_mode = os.getenv("TRADING_MODE", "PAPER")
     strategies_env = os.getenv("PORTFOLIO_STRATEGIES", "")
-    total_capital_env = os.getenv("PORTFOLIO_TOTAL_CAPITAL", "")
 
-    if not strategies_env or not total_capital_env:
+    if not strategies_env:
         logger.warning(
-            "PORTFOLIO_STRATEGIES or PORTFOLIO_TOTAL_CAPITAL not set — skipping auto-init. "
+            "PORTFOLIO_STRATEGIES not set — skipping auto-init. "
             "Call POST /portfolio/initialize manually."
         )
         return
 
     strategies = [s.strip() for s in strategies_env.split(",") if s.strip()]
-    total_capital = float(total_capital_env)
+
+    if trading_mode == "LIVE":
+        from SureshotSDK.ibkr.automation.client import IBKRClient
+        logger.info("LIVE mode — fetching account balance from IBKR for capital initialization...")
+        ibkr = IBKRClient()
+        total_capital = ibkr.fetch_acct_balance()
+        if total_capital is None:
+            logger.error(
+                "fetch_acct_balance() returned None — cannot auto-initialize portfolios. "
+                "Check IBKR gateway connectivity, then call POST /portfolio/initialize manually."
+            )
+            return
+        logger.info(f"IBKR net liquidation value: ${total_capital:,.2f}")
+    else:
+        total_capital_env = os.getenv("PORTFOLIO_TOTAL_CAPITAL", "")
+        if not total_capital_env:
+            logger.warning(
+                "PORTFOLIO_TOTAL_CAPITAL not set — skipping auto-init. "
+                "Call POST /portfolio/initialize manually."
+            )
+            return
+        total_capital = float(total_capital_env)
+        logger.info(f"PAPER mode — using configured capital: ${total_capital:,.2f}")
 
     db = SessionLocal()
     try:
