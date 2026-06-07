@@ -234,6 +234,7 @@ async def get_orders(
     strategy_name: Optional[str] = None,
     symbol: Optional[str] = None,
     status: Optional[str] = None,
+    trading_mode: Optional[str] = None,
     limit: int = 100,
     db: Session = Depends(get_db)
 ):
@@ -246,6 +247,8 @@ async def get_orders(
         query = query.filter(Order.symbol == symbol)
     if status:
         query = query.filter(Order.status == status)
+    if trading_mode:
+        query = query.filter(Order.trading_mode == trading_mode.upper())
 
     orders = query.order_by(Order.timestamp.desc()).limit(limit).all()
     return orders

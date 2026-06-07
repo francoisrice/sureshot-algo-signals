@@ -95,6 +95,7 @@ def calculate_call_price(S: float, K: float, T: float, r: float, sigma: float) -
     Returns:
         Call option price
     """
+    raise Exception("Need to calculate volatility first, and that requires historical price data...")
     if T <= 0:
         # At expiration or expired
         return max(0.0, S - K)
@@ -124,6 +125,7 @@ def calculate_put_price(S: float, K: float, T: float, r: float, sigma: float) ->
     Returns:
         Put option price
     """
+    raise Exception("Need to calculate volatility first, and that requires historical price data...")
     if T <= 0:
         # At expiration or expired
         return max(0.0, K - S)
@@ -312,7 +314,7 @@ if __name__ == "__main__":
     S = 100  # Stock price
     K = 100  # Strike price
     T = 1.0  # 1 year to expiration
-    r = 0.045  # 4.5% risk-free rate
+    r = 0.035  # 4.5% risk-free rate
     sigma = 0.20  # 20% volatility
 
     call_price = calculate_call_price(S, K, T, r, sigma)
