@@ -87,6 +87,9 @@
         src: "{{ playbook_dir }}/../../portfolio_multi_strategy/deployment.yaml"
         dest: /opt/trading/k8s/multistrategy-portfolio.yaml
 
+    - name: Label orchestrator node for persistent workloads
+      command: microk8s kubectl label node {{ ansible_hostname }} trading-node=orchestrator --overwrite
+
     - name: Apply trading namespace
       command: microk8s kubectl apply -f /opt/trading/k8s/namespace.yml
 
@@ -98,6 +101,12 @@
 
     - name: Apply trading-app PVCs
       command: microk8s kubectl apply -f /opt/trading/k8s/trading-app/pvc.yml
+
+    - name: Apply postgres PVC and Deployment (runs on orchestrator, persists across worker restarts)
+      command: microk8s kubectl apply -f /opt/trading/k8s/postgres/
+
+    - name: Wait for postgres to be ready
+      command: microk8s kubectl rollout status deployment/postgres -n trading --timeout=120s
 
     - name: Apply market-open/close CronJobs
       command: microk8s kubectl apply -f /opt/trading/k8s/cronjobs/

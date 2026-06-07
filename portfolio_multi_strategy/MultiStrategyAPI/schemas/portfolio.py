@@ -38,3 +38,14 @@ class AllocationResponse(BaseModel):
     total_locked: float
     allocations: Dict[str, Dict[str, float]]  # {strategy_name: {allocated, locked, score}}
     last_rebalance: Optional[datetime]
+
+
+class RotateStrategiesRequest(BaseModel):
+    """Request schema for rotating which strategies trade LIVE vs PAPER.
+    Provide strategy_names for an explicit list, or top_n to auto-select
+    the best performers by selection_metric. One of the two must be set.
+    """
+    strategy_names: Optional[List[str]] = None
+    top_n: Optional[int] = None
+    selection_metric: str = "total_return_pct"  # column on PortfolioState; used only with top_n
+    reason: Optional[str] = None

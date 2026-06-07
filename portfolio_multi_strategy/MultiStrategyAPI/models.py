@@ -80,3 +80,16 @@ class StrategyConfig(Base):
     strategy_name = Column(String,  primary_key=True, index=True, nullable=False, unique=True)
     trading_mode = Column(String, default="PAPER", nullable=False)  # "PAPER" or "LIVE"
     last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class StrategyModeHistory(Base):
+    """Audit trail of every LIVE/PAPER mode transition"""
+    __tablename__ = "strategy_mode_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    strategy_name = Column(String, index=True, nullable=False)
+    from_mode = Column(String, nullable=False)
+    to_mode = Column(String, nullable=False)
+    reason = Column(String, nullable=True)
+    triggered_by = Column(String, nullable=True)  # "manual" or "performance"

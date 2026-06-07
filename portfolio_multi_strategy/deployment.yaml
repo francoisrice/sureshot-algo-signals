@@ -32,7 +32,7 @@ spec:
               memory: "512Mi"
           env:
             - name: DATABASE_URL
-              value: "postgresql://postgres:postgres@localhost:5432/multistrategy"
+              value: "postgresql://postgres:postgres@postgres:5432/multistrategy"
             - name: TRADING_MODE
               value: "LIVE"
             - name: IBKR_GATEWAY_URL
@@ -121,64 +121,6 @@ spec:
             - name: DATA_FETCHER_URL
               value: "http://localhost:3100"
 
-        # PostgreSQL — portfolio state persistence
-        - name: postgres
-          image: postgres:14-alpine
-          ports:
-            - containerPort: 5432
-          resources:
-            requests:
-              cpu: "200m"
-              memory: "256Mi"
-            limits:
-              cpu: "500m"
-              memory: "512Mi"
-          env:
-            - name: POSTGRES_USER
-              value: "postgres"
-            - name: POSTGRES_PASSWORD
-              value: "postgres"
-            - name: POSTGRES_DB
-              value: "multistrategy"
-          readinessProbe:
-            exec:
-              command: ["pg_isready", "-U", "postgres"]
-            initialDelaySeconds: 5
-            periodSeconds: 5
-          volumeMounts:
-            - name: postgres-storage
-              mountPath: /var/lib/postgresql/data
-      volumes:
-        - name: postgres-storage
-          persistentVolumeClaim:
-            claimName: multistrategy-postgres-pvc
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: multistrategy-postgres-pvc
-  namespace: trading
-spec:
-  accessModes:
-    - ReadWriteOnce
-  storageClassName: microk8s-hostpath
-  resources:
-    requests:
-      storage: 1Gi
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: postgres
-  namespace: trading
-spec:
-  selector:
-    app: multistrategy
-  ports:
-    - protocol: TCP
-      port: 5432
-      targetPort: 5432
-  type: ClusterIP
 ---
 apiVersion: v1
 kind: Service

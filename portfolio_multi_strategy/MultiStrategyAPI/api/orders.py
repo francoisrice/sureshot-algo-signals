@@ -27,6 +27,15 @@ def get_trading_mode(strategy_name: str, db: Session) -> str:
         return config.trading_mode.upper()
     return "PAPER"
 
+
+def _update_portfolio_returns(portfolio) -> None:
+    """Recompute total_return and total_return_pct from total_value vs initial_cash."""
+    portfolio.total_return = portfolio.total_value - portfolio.initial_cash
+    portfolio.total_return_pct = (
+        (portfolio.total_return / portfolio.initial_cash * 100)
+        if portfolio.initial_cash > 0 else 0.0
+    )
+
 def execute_paper_trade(order_type: str, symbol: str, quantity: float, price: float):
     """
     Execute paper trade (just log it, no actual broker call)
@@ -343,6 +352,7 @@ async def buy_all(trade: TradeRequest, db: Session = Depends(get_db)):
 
         # Update total portfolio value
         portfolio.total_value += position.market_value
+        _update_portfolio_returns(portfolio)
 
         db.commit()
         db.refresh(order)
@@ -473,6 +483,7 @@ async def sell_short_all(trade: TradeRequest, db: Session = Depends(get_db)):
 
         # Update total portfolio value
         portfolio.total_value += position.market_value
+        _update_portfolio_returns(portfolio)
 
         db.commit()
         db.refresh(order)
@@ -566,6 +577,7 @@ async def sell_all(trade: TradeRequest, db: Session = Depends(get_db)):
         # Update portfolio state
         portfolio.cash += total_proceeds
         portfolio.total_value = portfolio.cash
+        _update_portfolio_returns(portfolio)
 
         # Check if still invested in any positions (before deleting current position)
         remaining_positions = db.query(Position).filter(
@@ -668,9 +680,10 @@ async def close_short_all(trade: TradeRequest, db: Session = Depends(get_db)):
         db.add(order)
 
         # Update portfolio state
-        portfolio.collateral += total_proceeds 
+        portfolio.collateral += total_proceeds
         portfolio.cash = portfolio.collateral
         portfolio.total_value = portfolio.cash
+        _update_portfolio_returns(portfolio)
 
         # Check if still invested in any positions (before deleting current position)
         remaining_positions = db.query(Position).filter(

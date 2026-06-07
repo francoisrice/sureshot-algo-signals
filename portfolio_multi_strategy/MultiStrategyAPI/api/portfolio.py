@@ -10,7 +10,7 @@ import logging
 from datetime import datetime
 
 from ..database import get_db
-from ..models import PortfolioState, Position, AllocationHistory
+from ..models import PortfolioState, Position, AllocationHistory, StrategyConfig
 from ..schemas import PortfolioStateResponse, AllocationResponse, InitializeRequest
 from ..allocation import CapitalAllocator
 
@@ -256,6 +256,50 @@ async def get_current_allocation(db: Session = Depends(get_db)):
     except Exception as e:
         logger.error(f"Error getting current allocation: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/performance/summary")
+async def get_performance_summary(db: Session = Depends(get_db)):
+    """
+    Paper vs live P&L breakdown across all strategies.
+
+    Returns each strategy's profit in dollars and percent, grouped by trading mode.
+    Use this to inform rotation decisions: paper strategies with the highest
+    total_return_pct are candidates to be promoted to LIVE.
+    """
+    portfolios = db.query(PortfolioState).all()
+    configs = {c.strategy_name: c.trading_mode for c in db.query(StrategyConfig).all()}
+
+    paper, live = [], []
+
+    for p in portfolios:
+        mode = configs.get(p.strategy_name, "PAPER")
+        entry = {
+            "strategy_name": p.strategy_name,
+            "trading_mode": mode,
+            "initial_capital": p.initial_cash,
+            "current_value": p.total_value,
+            "profit": p.total_return or 0.0,
+            "profit_pct": p.total_return_pct or 0.0,
+            "invested": p.invested,
+        }
+        (live if mode == "LIVE" else paper).append(entry)
+
+    def _aggregate(strategies):
+        total_initial = sum(s["initial_capital"] for s in strategies)
+        total_profit = sum(s["profit"] for s in strategies)
+        return {
+            "count": len(strategies),
+            "total_profit": total_profit,
+            "total_profit_pct": (total_profit / total_initial * 100) if total_initial > 0 else 0.0,
+        }
+
+    return {
+        "paper": sorted(paper, key=lambda s: s["profit_pct"], reverse=True),
+        "live": sorted(live, key=lambda s: s["profit_pct"], reverse=True),
+        "paper_summary": _aggregate(paper),
+        "live_summary": _aggregate(live),
+    }
 
 
 @router.get("/allocation/history")

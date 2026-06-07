@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import logging
 
 from .database import init_db, SessionLocal
-from .models import PortfolioState, AllocationHistory
+from .models import PortfolioState, AllocationHistory, StrategyConfig
 from .allocation import CapitalAllocator
 from .api import orders, positions, portfolio, config
 
@@ -129,6 +129,29 @@ def _auto_initialize_portfolios():
         db.close()
 
 
+def _seed_strategy_configs(strategies: list) -> None:
+    """
+    Create a PAPER StrategyConfig row for any strategy that doesn't have one yet.
+    Never overwrites existing rows — the DB is the sole source of truth for
+    LIVE/PAPER assignment after initial seeding.
+    """
+    db = SessionLocal()
+    try:
+        for strategy_name in strategies:
+            exists = db.query(StrategyConfig).filter(
+                StrategyConfig.strategy_name == strategy_name
+            ).first()
+            if not exists:
+                db.add(StrategyConfig(strategy_name=strategy_name, trading_mode="PAPER"))
+                logger.info(f"Seeded StrategyConfig: {strategy_name} -> PAPER (default)")
+        db.commit()
+    except Exception as e:
+        logger.error(f"Failed to seed strategy configs: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+
 @app.on_event("startup")
 async def startup_event():
     logger.info("Starting MultiStrategy Portfolio API...")
@@ -137,6 +160,10 @@ async def startup_event():
     init_db()
     logger.info("Database initialized")
     _auto_initialize_portfolios()
+    strategies_env = os.getenv("PORTFOLIO_STRATEGIES", "")
+    if strategies_env:
+        strategies = [s.strip() for s in strategies_env.split(",") if s.strip()]
+        _seed_strategy_configs(strategies)
 
 
 @app.get("/")
