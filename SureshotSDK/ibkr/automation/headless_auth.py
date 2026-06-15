@@ -64,5 +64,34 @@ def sync_login():
             return "Login Failed"
 
 
+async def async_login():
+    loginA, loginB, loginC = _get_credentials()
+    async with async_playwright() as session:
+        browser = await session.chromium.launch(
+            headless=True,
+            args=['--no-sandbox', '--disable-dev-shm-usage']
+        )
+        context = await browser.new_context(ignore_https_errors=True)
+        page = await context.new_page()
+        await page.goto(f'{GATEWAY_URL}/')
+        await page.wait_for_load_state('networkidle')
+        await page.fill('#xyz-field-username', loginA)
+        await page.fill('#xyz-field-password', loginB)
+        await page.click('button[type="submit"]')
+        await page.wait_for_selector('.xyz-multipleselect', state='visible')
+        await page.select_option('.xyz-multipleselect', value='4')
+        await page.wait_for_selector('#xyz-field-silver-response', state='visible')
+        await page.fill('#xyz-field-silver-response', get_totp_code(loginC))
+        await page.locator('button:has-text("Login")').locator('visible=true').first.click()
+        try:
+            await page.wait_for_selector('text=Client login succeeds', timeout=5000)
+            await browser.close()
+            return "Login Successful"
+        except Exception:
+            await page.screenshot(path='Failed_Login.png')
+            await browser.close()
+            return "Login Failed"
+
+
 if __name__ == "__main__":
     print(sync_login())

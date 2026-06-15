@@ -1,3 +1,4 @@
+import asyncio
 import requests
 import json
 import urllib3
@@ -181,9 +182,33 @@ class IBKRClient:
         return json.dumps(resp.json())
 
     def fetch_acct_balance(self) -> float | None:
-        """Return net liquidation value (total account value) in USD."""
+        """Return net liquidation value (total account value) in USD. Sync version — do not call from an asyncio event loop."""
         try:
             resp = self._client.get(f'{self.baseUrl}/portfolio/{self.account}/summary')
+            data = resp.json()
+            net_liq = data.get('netliquidation', {})
+            if net_liq.get('isNull'):
+                logger.warning("netliquidation is null in account summary")
+                return None
+            return float(net_liq['amount'])
+        except Exception as e:
+            logger.exception(f"fetch_acct_balance() failed: {e}")
+            return None
+
+    async def async_fetch_acct_balance(self) -> float | None:
+        """Return net liquidation value in USD. Async-safe: uses async_playwright for re-auth."""
+        from .auth_check import confirm_auth
+        from .headless_auth import async_login
+        try:
+            auth_resp = await asyncio.to_thread(confirm_auth)
+            if auth_resp.status_code >= 300:
+                logger.warning("Session unauthenticated — re-authenticating via Playwright")
+                result = await async_login()
+                if result != "Login Successful":
+                    logger.error("IBKR re-authentication failed")
+                    return None
+            url = f'{self.baseUrl}/portfolio/{self.account}/summary'
+            resp = await asyncio.to_thread(requests.get, url, verify=False)
             data = resp.json()
             net_liq = data.get('netliquidation', {})
             if net_liq.get('isNull'):

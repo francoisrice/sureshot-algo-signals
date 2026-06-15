@@ -47,7 +47,7 @@ app.include_router(portfolio.router)
 app.include_router(config.router)
 
 
-def _auto_initialize_portfolios():
+async def _auto_initialize_portfolios():
     """Seed PortfolioState rows on first startup. Skips if rows already exist."""
     trading_mode = os.getenv("TRADING_MODE", "PAPER")
     strategies_env = os.getenv("PORTFOLIO_STRATEGIES", "")
@@ -65,7 +65,7 @@ def _auto_initialize_portfolios():
         from SureshotSDK.ibkr.automation.client import IBKRClient
         logger.info("LIVE mode — fetching account balance from IBKR for capital initialization...")
         ibkr = IBKRClient()
-        total_capital = ibkr.fetch_acct_balance()
+        total_capital = await ibkr.async_fetch_acct_balance()
         if total_capital is None:
             logger.error(
                 "fetch_acct_balance() returned None — cannot auto-initialize portfolios. "
@@ -159,7 +159,7 @@ async def startup_event():
     logger.info(f"Trading mode: {trading_mode}")
     init_db()
     logger.info("Database initialized")
-    _auto_initialize_portfolios()
+    await _auto_initialize_portfolios()
     strategies_env = os.getenv("PORTFOLIO_STRATEGIES", "")
     if strategies_env:
         strategies = [s.strip() for s in strategies_env.split(",") if s.strip()]

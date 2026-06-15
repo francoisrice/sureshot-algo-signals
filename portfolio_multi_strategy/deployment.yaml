@@ -33,8 +33,6 @@ spec:
           env:
             - name: DATABASE_URL
               value: "postgresql://postgres:postgres@postgres:5432/multistrategy"
-            - name: TRADING_MODE
-              value: "LIVE"
             - name: IBKR_GATEWAY_URL
               value: "https://ib-gateway-service:5000/v1/api"
             - name: IBKR_GATEWAY_HTTP_URL
