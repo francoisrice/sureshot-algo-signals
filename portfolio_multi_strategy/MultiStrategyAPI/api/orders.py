@@ -28,12 +28,15 @@ def get_trading_mode(strategy_name: str, db: Session) -> str:
     return "PAPER"
 
 
-def _update_portfolio_returns(portfolio) -> None:
-    """Recompute total_return and total_return_pct from total_value vs initial_cash."""
+def _update_portfolio_returns(portfolio, position_cost: float = None) -> None:
+    """Recompute total_return and total_return_pct.
+    Falls back to initial_cash when no position cost is available, effectively assuming a full portfolio trade.
+    """
     portfolio.total_return = portfolio.total_value - portfolio.initial_cash
+    denom = position_cost if (position_cost and position_cost > 0) else portfolio.initial_cash
     portfolio.total_return_pct = (
-        (portfolio.total_return / portfolio.initial_cash * 100)
-        if portfolio.initial_cash > 0 else 0.0
+        (portfolio.total_return / denom * 100)
+        if denom > 0 else 0.0
     )
 
 def execute_paper_trade(order_type: str, symbol: str, quantity: float, price: float):
@@ -578,9 +581,10 @@ async def sell_all(trade: TradeRequest, db: Session = Depends(get_db)):
         db.add(order)
 
         # Update portfolio state
+        position_cost = position.avg_price * position.quantity
         portfolio.cash += total_proceeds
         portfolio.total_value = portfolio.cash
-        _update_portfolio_returns(portfolio)
+        _update_portfolio_returns(portfolio, position_cost=position_cost)
 
         # Check if still invested in any positions (before deleting current position)
         remaining_positions = db.query(Position).filter(
@@ -683,10 +687,11 @@ async def close_short_all(trade: TradeRequest, db: Session = Depends(get_db)):
         db.add(order)
 
         # Update portfolio state
+        position_cost = abs(position.avg_price * position.quantity)
         portfolio.collateral += total_proceeds
         portfolio.cash = portfolio.collateral
         portfolio.total_value = portfolio.cash
-        _update_portfolio_returns(portfolio)
+        _update_portfolio_returns(portfolio, position_cost=position_cost)
 
         # Check if still invested in any positions (before deleting current position)
         remaining_positions = db.query(Position).filter(
