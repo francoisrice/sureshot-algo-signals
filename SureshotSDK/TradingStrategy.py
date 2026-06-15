@@ -113,6 +113,27 @@ class TradingStrategy:
         """Stop the scheduler"""
         self.running = False
 
+    def fetch_trading_mode(self) -> str:
+        """Fetch trading mode from the API config and set self.trading_mode."""
+        if not (self.api_url and self.strategy_name):
+            self.logger.warning("Cannot fetch trading mode: api_url or strategy_name not set")
+            return self.trading_mode
+        try:
+            response = requests.get(
+                f"{self.api_url}/config/{self.strategy_name}/trading-mode",
+                timeout=5
+            )
+            response.raise_for_status()
+            mode = response.json()["trading_mode"]
+            self.trading_mode = mode
+            self.logger.info(f"Trading mode set from API: {mode}")
+            return mode
+        except Exception as e:
+            fallback = os.getenv("TRADING_MODE", "PAPER")
+            self.logger.error(f"Failed to fetch trading mode from API: {e} — falling back to env var: {fallback}")
+            self.trading_mode = fallback
+            return fallback
+
     def real_time_price_fetcher(self, symbol: str) -> Optional[dict]:
         try:
             if self._data_fetcher is None:

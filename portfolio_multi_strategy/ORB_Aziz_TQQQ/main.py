@@ -114,6 +114,7 @@ class ORBAzizTQQQ(TradingStrategy):
 
     def initialize(self):
         """Initialize for LIVE trading"""
+        self.fetch_trading_mode()
         logger.info(f"Initializing {self.name} for LIVE trading")
 
     def backtest_initialize(self,start_date,end_date):
