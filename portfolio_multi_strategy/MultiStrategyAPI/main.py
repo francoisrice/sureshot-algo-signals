@@ -3,6 +3,7 @@ MultiStrategy Portfolio API - Main Application
 Microservice for managing multi-strategy portfolios with dynamic capital allocation
 """
 
+import asyncio
 import os
 from datetime import datetime
 from fastapi import FastAPI
@@ -65,10 +66,23 @@ async def _auto_initialize_portfolios():
         from SureshotSDK.ibkr.automation.client import IBKRClient
         logger.info("LIVE mode — fetching account balance from IBKR for capital initialization...")
         ibkr = IBKRClient()
-        total_capital = await ibkr.async_fetch_acct_balance()
+        total_capital = None
+        max_attempts = 8
+        for attempt in range(1, max_attempts + 1):
+            total_capital = await ibkr.async_fetch_acct_balance()
+            if total_capital is not None:
+                break
+            if attempt < max_attempts:
+                delay = min(2 ** attempt, 10)  # 2, 4, 8, 16 seconds
+                logger.warning(
+                    f"fetch_acct_balance() returned None "
+                    f"(attempt {attempt}/{max_attempts}) — retrying in {delay}s..."
+                )
+                await asyncio.sleep(delay)
         if total_capital is None:
             logger.error(
-                "fetch_acct_balance() returned None — cannot auto-initialize portfolios. "
+                f"fetch_acct_balance() failed after {max_attempts} attempts — "
+                "cannot auto-initialize portfolios. "
                 "Check IBKR gateway connectivity, then call POST /portfolio/initialize manually."
             )
             return
