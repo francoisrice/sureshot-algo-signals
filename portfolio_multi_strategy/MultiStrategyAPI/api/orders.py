@@ -123,9 +123,24 @@ def execute_live_trade(order_type: str, symbol: str, quantity: float, price: flo
 
         logger.info(f"IBKR Order placed: {ibkr_order_id}")
 
+        fill = None
+        if ibkr_order_id and ibkr_order_id != "unknown":
+            fill = ibkr_client.wait_for_fill(ibkr_order_id)
+
+        if fill:
+            fill_price = fill.get('price') or fill.get('avgPrice') or fill.get('last_price')
+            logger.info(f"IBKR Order filled: {ibkr_order_id} @ {fill_price}")
+            return {
+                "status": "EXECUTED",
+                "execution_timestamp": datetime.utcnow(),
+                "ibkr_order_id": ibkr_order_id,
+                "fill_price": fill_price
+            }
+
+        logger.warning(f"IBKR Order {ibkr_order_id} not confirmed filled within timeout — marking PENDING")
         return {
-            "status": "PENDING",  # Live orders start as PENDING until confirmed
-            "execution_timestamp": None,  # Will be updated when order fills
+            "status": "PENDING",
+            "execution_timestamp": datetime.utcnow(),
             "ibkr_order_id": ibkr_order_id
         }
 

@@ -1,6 +1,7 @@
 import asyncio
 import requests
 import json
+import time
 import urllib3
 import logging
 import os
@@ -62,8 +63,10 @@ class IBKRClient:
         }
         resp = self._client.post(url=f"{self.baseUrl}{self.endpoint}", json=data)
         respData = resp.json()
-        if 'id' in respData[0]:
+        if isinstance(respData, list) and respData and 'id' in respData[0]:
             respData = self._continue_and_confirm_order(respData)
+        elif isinstance(respData, dict) and 'id' in respData:
+            respData = self._continue_and_confirm_order([respData])
         return respData
 
     def sell(self, conid, quantity):
@@ -78,8 +81,10 @@ class IBKRClient:
         }
         resp = self._client.post(url=f"{self.baseUrl}{self.endpoint}", json=data)
         respData = resp.json()
-        if 'id' in respData[0]:
+        if isinstance(respData, list) and respData and 'id' in respData[0]:
             respData = self._continue_and_confirm_order(respData)
+        elif isinstance(respData, dict) and 'id' in respData:
+            respData = self._continue_and_confirm_order([respData])
         return respData
 
     def stop_order(self, conid, quantity, stopPrice):
@@ -97,8 +102,10 @@ class IBKRClient:
         if resp.status_code >= 300:
             return {"message": "Error: Stop Loss Request Failed"}
         respData = resp.json()
-        if 'id' in respData[0]:
+        if isinstance(respData, list) and respData and 'id' in respData[0]:
             respData = self._continue_and_confirm_order(respData)
+        elif isinstance(respData, dict) and 'id' in respData:
+            respData = self._continue_and_confirm_order([respData])
         return respData
 
     def _continue_and_confirm_order(self, respData):
@@ -166,6 +173,30 @@ class IBKRClient:
             return self._filter_us_exchange_contracts(allContracts)
         except Exception as e:
             logger.exception(f"fetch_conids({symbols}) failed: {e}")
+        return None
+
+    def get_trades(self):
+        """Return recent fills from IBKR. Returns a list of trade dicts."""
+        try:
+            resp = self._client.get(f'{self.baseUrl}/iserver/account/trades')
+            return resp.json() if isinstance(resp.json(), list) else []
+        except Exception as e:
+            logger.warning(f"get_trades() failed: {e}")
+            return []
+
+    def wait_for_fill(self, ibkr_order_id: str, timeout: float = 10.0, poll_interval: float = 1.0) -> dict | None:
+        """
+        Poll GET /iserver/account/trades until a fill matching ibkr_order_id appears or timeout expires.
+        Returns the fill dict on success, None on timeout.
+        """
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            for trade in self.get_trades():
+                order_ref = str(trade.get('order_ref') or trade.get('orderId') or trade.get('ibOrderID') or '')
+                if order_ref == str(ibkr_order_id):
+                    return trade
+            time.sleep(poll_interval)
+        logger.warning(f"wait_for_fill: no fill found for order {ibkr_order_id} within {timeout}s")
         return None
 
     def fetch_positions(self):
