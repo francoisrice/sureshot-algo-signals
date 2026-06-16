@@ -3,7 +3,7 @@ Database models for MultiStrategy Portfolio API
 SQLAlchemy ORM models for orders, positions, portfolio state, and capital allocation
 """
 
-from sqlalchemy import Column, Integer, Float, String, DateTime, Boolean, JSON
+from sqlalchemy import Column, Integer, Float, String, DateTime, Boolean, JSON, Date
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
 
@@ -61,6 +61,7 @@ class PortfolioState(Base):
     position_locked = Column(Boolean, default=False)  # True when strategy has open position
     total_return = Column(Float, nullable=True)
     total_return_pct = Column(Float, nullable=True)
+    completed_trade_date = Column(Date, nullable=True)
     last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 

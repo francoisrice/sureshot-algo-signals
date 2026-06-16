@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import logging
-from datetime import datetime
+from datetime import datetime, date
 
 from ..database import get_db
 from ..models import PortfolioState, Position, AllocationHistory, StrategyConfig
@@ -37,6 +37,32 @@ async def get_all_portfolio_states(db: Session = Depends(get_db)):
     """Get portfolio state for all strategies"""
     portfolios = db.query(PortfolioState).all()
     return portfolios
+
+
+@router.get("/{strategy_name}/completed")
+async def get_completed_status(strategy_name: str, db: Session = Depends(get_db)):
+    """Return whether a trade was already completed today for this strategy."""
+    portfolio = db.query(PortfolioState).filter(
+        PortfolioState.strategy_name == strategy_name
+    ).first()
+    if not portfolio:
+        raise HTTPException(status_code=404, detail="Portfolio state not found")
+    completed_today = portfolio.completed_trade_date == date.today()
+    return {"strategy_name": strategy_name, "completed_today": completed_today}
+
+
+@router.post("/{strategy_name}/complete")
+async def mark_trade_complete(strategy_name: str, db: Session = Depends(get_db)):
+    """Mark today's trade as completed so restarts don't re-enter."""
+    portfolio = db.query(PortfolioState).filter(
+        PortfolioState.strategy_name == strategy_name
+    ).first()
+    if not portfolio:
+        raise HTTPException(status_code=404, detail="Portfolio state not found")
+    portfolio.completed_trade_date = date.today()
+    db.commit()
+    logger.info(f"{strategy_name}: trade marked complete for {date.today()}")
+    return {"strategy_name": strategy_name, "completed_trade_date": portfolio.completed_trade_date}
 
 
 @router.get("/{strategy_name}/invested")

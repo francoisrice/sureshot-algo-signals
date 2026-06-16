@@ -425,3 +425,31 @@ class TradingStrategy:
             else:
                 self.logger.error("No API or Portfolio configured for invested check")
                 return False
+
+    def is_trade_completed_today(self) -> bool:
+        """Return True if a trade was already completed today (survives pod restarts via DB)."""
+        if self.api_url and self.strategy_name:
+            try:
+                response = requests.get(
+                    f"{self.api_url}/portfolio/{self.strategy_name}/completed",
+                    timeout=5
+                )
+                response.raise_for_status()
+                return response.json().get("completed_today", False)
+            except Exception as e:
+                self.logger.error(f"Failed to query completed status from API: {e}")
+                return False
+        return False
+
+    def mark_trade_completed(self):
+        """Persist today's trade completion to DB so restarts don't re-enter."""
+        if self.api_url and self.strategy_name:
+            try:
+                response = requests.post(
+                    f"{self.api_url}/portfolio/{self.strategy_name}/complete",
+                    timeout=5
+                )
+                response.raise_for_status()
+                self.logger.info("Trade marked complete in DB")
+            except Exception as e:
+                self.logger.error(f"Failed to mark trade complete via API: {e}")

@@ -115,7 +115,10 @@ class ORBAzizTQQQ(TradingStrategy):
     def initialize(self):
         """Initialize for LIVE trading"""
         self.fetch_trading_mode()
+        self.completedTrade = self.is_trade_completed_today()
         logger.info(f"Initializing {self.name} for LIVE trading")
+        if self.completedTrade:
+            logger.info("Trade already completed today — will not re-enter")
 
     def backtest_initialize(self,start_date,end_date):
         """Initialize for BACKTEST mode"""
@@ -267,22 +270,26 @@ class ORBAzizTQQQ(TradingStrategy):
                     logger.info(f"Take profit hit for {self.tradingSymbol}: ${price:.2f} >= ${self.take_profit_price:.2f}")
                     self.sell_all(self.tradingSymbol)
                     self.completedTrade = True
+                    self.mark_trade_completed()
                     return
                 elif price <= self.stop_loss_price:
                     logger.info(f"Stop loss hit for {self.tradingSymbol}: ${price:.2f} <= ${self.stop_loss_price:.2f}")
                     self.sell_all(self.tradingSymbol)
                     self.completedTrade = True
+                    self.mark_trade_completed()
                     return
             if self.position_direction == 'SHORT':
                 if price <= self.take_profit_price:
                     logger.info(f"Take profit hit for {self.tradingSymbol}: ${price:.2f} <= ${self.take_profit_price:.2f}")
                     self.close_short_all(self.tradingSymbol)
                     self.completedTrade = True
+                    self.mark_trade_completed()
                     return
                 elif price >= self.stop_loss_price:
                     logger.info(f"Stop loss hit for {self.tradingSymbol}: ${price:.2f} >= ${self.stop_loss_price:.2f}")
                     self.close_short_all(self.tradingSymbol)
                     self.completedTrade = True
+                    self.mark_trade_completed()
                     return
 
             # End of day exit
@@ -291,9 +298,11 @@ class ORBAzizTQQQ(TradingStrategy):
                 if self.position_direction == 'LONG':
                     self.sell_all(self.tradingSymbol)
                     self.completedTrade = True
+                    self.mark_trade_completed()
                 if self.position_direction == 'SHORT':
                     self.close_short_all(self.tradingSymbol)
                     self.completedTrade = True
+                    self.mark_trade_completed()
                 return
         else:
             # Entry logic: Long breakout

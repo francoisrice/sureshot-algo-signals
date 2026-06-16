@@ -4,7 +4,7 @@ Portfolio state schemas for request/response validation
 
 from pydantic import BaseModel
 from typing import Optional, Dict, List
-from datetime import datetime
+from datetime import datetime, date
 
 
 class InitializeRequest(BaseModel):
@@ -25,6 +25,7 @@ class PortfolioStateResponse(BaseModel):
     invested: bool
     total_return: Optional[float]
     total_return_pct: Optional[float]
+    completed_trade_date: Optional[date]
     last_updated: datetime
 
     class Config:
