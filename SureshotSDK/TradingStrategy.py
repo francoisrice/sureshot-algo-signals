@@ -250,7 +250,7 @@ class TradingStrategy:
                         "price": current_price,
                         "quantity": quantityOverride
                     },
-                    timeout=10
+                    timeout=30
                 )
                 response.raise_for_status()
                 data = response.json()
@@ -293,7 +293,7 @@ class TradingStrategy:
                         "symbol": symbol,
                         "price": current_price
                     },
-                    timeout=10
+                    timeout=30
                 )
                 response.raise_for_status()
                 data = response.json()
@@ -337,7 +337,7 @@ class TradingStrategy:
                         "price": current_price,
                         "quantity": quantityOverride
                     },
-                    timeout=10
+                    timeout=30
                 )
                 response.raise_for_status()
                 data = response.json()
@@ -380,7 +380,7 @@ class TradingStrategy:
                         "symbol": symbol,
                         "price": current_price
                     },
-                    timeout=10
+                    timeout=30
                 )
                 response.raise_for_status()
                 data = response.json()
