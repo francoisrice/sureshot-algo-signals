@@ -379,6 +379,14 @@ def main(strategy: ORBAzizTQQQ):
                 strategy.idle_seconds(60)
                 continue
 
+            if strategy.completedTrade:
+                if strategy._data_fetcher is not None:
+                    logger.info("Trade complete — stopping data fetcher")
+                    strategy._data_fetcher.close()
+                    strategy._data_fetcher = None
+                strategy.idle_seconds(60)
+                continue
+
             bar = strategy.real_time_price_fetcher(strategy.tradingSymbol)
             if bar:
                 logger.debug(f"Bar for {strategy.tradingSymbol}: {bar}")
