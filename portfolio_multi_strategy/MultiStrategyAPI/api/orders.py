@@ -684,7 +684,7 @@ async def close_short_all(trade: TradeRequest, db: Session = Depends(get_db)):
             trade_result = execute_paper_trade("BUY", trade.symbol, -shares_to_sell, trade.price)
         else:  # LIVE
             # Live trade - call IBKR in a thread so sync_playwright works outside asyncio loop
-            trade_result = await asyncio.to_thread(execute_live_trade, "BUY", trade.symbol, shares_to_sell, trade.price)
+            trade_result = await asyncio.to_thread(execute_live_trade, "BUY", trade.symbol, abs(shares_to_sell), trade.price)
 
         # Create order record
         order = Order(
