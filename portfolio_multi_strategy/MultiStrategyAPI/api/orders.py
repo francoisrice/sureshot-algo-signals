@@ -481,10 +481,26 @@ async def sell_short_all(trade: TradeRequest, db: Session = Depends(get_db)):
             Position.symbol == trade.symbol
         ).first()
 
+        if position and position.quantity > 0:
+            # Orphaned long detected — close it so the strategy can re-enter short
+            # cleanly on the next bar. Don't open a short position now.
+            logger.warning(
+                f"sell_short_all: orphaned long ({position.quantity} {trade.symbol}) detected — "
+                f"closing it before allowing short entry"
+            )
+            await sell_all(TradeRequest(
+                strategy_name=trade.strategy_name,
+                symbol=trade.symbol,
+                price=trade.price,
+                quantity=None
+            ), db)
+            raise HTTPException(
+                status_code=409,
+                detail=f"Orphaned long position closed. Retry short on next bar."
+            )
+
         if position:
-            # TODO: You can't short if you have a BUY position. Put in a check.
-            #   Reduce buy position if trying to short with BUY position
-            # Update average price
+            # Add to existing short position
             total_shares = position.quantity - shares_to_buy
             total_cost_basis = (position.quantity * position.avg_price) + total_cost
             position.avg_price = total_cost_basis / total_shares
@@ -578,7 +594,17 @@ async def sell_all(trade: TradeRequest, db: Session = Depends(get_db)):
             trade_result = execute_paper_trade("SELL", trade.symbol, shares_to_sell, trade.price)
         else:  # LIVE
             # Live trade - call IBKR in a thread so sync_playwright works outside asyncio loop
-            trade_result = await asyncio.to_thread(execute_live_trade, "SELL", trade.symbol, shares_to_sell, trade.price)
+            try:
+                trade_result = await asyncio.to_thread(execute_live_trade, "SELL", trade.symbol, shares_to_sell, trade.price)
+            except Exception as e:
+                # IBKR rejected the sell (e.g. position never filled, or session issue).
+                # Still clean up DB so the stale position doesn't block future days.
+                logger.error(f"LIVE sell failed for {trade.symbol}: {e} — recording FAILED order and cleaning up DB position")
+                trade_result = {
+                    "status": "FAILED",
+                    "execution_timestamp": datetime.utcnow(),
+                    "ibkr_order_id": "unknown"
+                }
 
         # Create order record
         order = Order(
@@ -590,14 +616,15 @@ async def sell_all(trade: TradeRequest, db: Session = Depends(get_db)):
             order_value=total_proceeds,
             status=trade_result["status"],
             trading_mode=trading_mode,
-            ibkr_order_id=trade_result["ibkr_order_id"],
+            ibkr_order_id=trade_result.get("ibkr_order_id"),
             execution_timestamp=trade_result["execution_timestamp"]
         )
         db.add(order)
 
-        # Update portfolio state
+        # Update portfolio state — always clean up position regardless of IBKR outcome
         position_cost = position.avg_price * position.quantity
-        portfolio.cash += total_proceeds
+        if trade_result["status"] != "FAILED":
+            portfolio.cash += total_proceeds
         portfolio.total_value = portfolio.cash
         _update_portfolio_returns(portfolio, position_cost=position_cost)
 
@@ -615,7 +642,7 @@ async def sell_all(trade: TradeRequest, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(order)
 
-        logger.info(f"SELL_ALL executed: {trade.strategy_name} sold {shares_to_sell} {trade.symbol} @ ${trade.price:.2f}")
+        logger.info(f"SELL_ALL executed: {trade.strategy_name} sold {shares_to_sell} {trade.symbol} @ ${trade.price:.2f} (status={trade_result['status']})")
 
         return TradeResponse(
             order_id=order.id,

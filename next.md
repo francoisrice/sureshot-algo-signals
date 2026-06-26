@@ -8,14 +8,16 @@ ORB scanner is now parallelized & pulls daily bars from memory (~76MB). Allows f
 
 Implemented ORB with TQQQ - Backtests and optimizations look profitable
 
-Trading Live
+Trading Live, Pull LIVE balance from IBKR, Midday trade guard,  
 
 ---
 
 - **Automated strategy rotation** (future portfolios): `POST /config/rotate-live-strategies` already supports `top_n` auto-selection by paper return %. Call this endpoint in-cluster via `http://multistrategy-api.trading.svc.cluster.local:8000/config/rotate-live-strategies` with `{"top_n": N, "reason": "Weekly auto-rotation"}`. We may need to rewrite the endpoint to accept a dict of strategies with the trading modes for each. 
 
 - **ORB mid-day restart recovery**: `initialize()` should fetch today's 9:30–9:35 bars from Yahoo Finance when the pod starts after the opening range window has passed, so any restart (manual or crash) self-heals without manual intervention.
-- **ORB daily trade guard**: add `completed_trade_date` (Date, nullable) to `PortfolioState` model. Expose via `GET /portfolio/{strategy}/completed` and `POST /portfolio/{strategy}/complete`. Add `is_trade_completed_today()` and `mark_trade_completed()` helpers to `TradingStrategy.py`. In `ORB initialize()`, set `self.completedTrade = True` if already completed today; call `mark_trade_completed()` after entry. Survives pod restarts via PVC; resets naturally when worker is reprovisioned each morning.
+- ~~**ORB daily trade guard**: add `completed_trade_date` (Date, nullable) to `PortfolioState` model. Expose via `GET /portfolio/{strategy}/completed` and `POST /portfolio/{strategy}/complete`. Add `is_trade_completed_today()` and `mark_trade_completed()` helpers to `TradingStrategy.py`. In `ORB initialize()`, set `self.completedTrade = True` if already completed today; call `mark_trade_completed()` after entry. Survives pod restarts via PVC; resets naturally when worker is reprovisioned each morning.~~ **Done**
+
+- **Make daily price fetcher more cost effecient**: daily_price_fetcher through Playwright. Fall back to Browserbase on miss. Browserbase updates Playwright query. Sessions aren't killed after they finish;
 
 **Dashboard to track live trading performance**: Create a lightweight, web dashboard to track performance of both Live and Paper trading strategies. Lock behind auth.
 
@@ -25,6 +27,9 @@ Trading Live
 **1. Run multiple strategies and optimizations at the same time <- Cloud infrastrucuture with multiple nodes and container clusters**
   1. Create Tests to lock-in functionality/results of backtests and optimization
   2. Add Bonds, Options, and Fundamental strategies to portfolio mix
+
+https://public.com/bonds/screener?issuerSymbol=AMZN&pageNumber=0
+https://public.com/bonds/screener?bondType=TREASURY
 
 _Refactor trading code to only reauth to IBKR when needed and only through the Client Portal container. Playwright doesn't need to be a dependency for the Portfolio or TradingStrategy container.
 _Add keys to the orchestrator node

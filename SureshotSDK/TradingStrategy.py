@@ -441,6 +441,23 @@ class TradingStrategy:
                 return False
         return False
 
+    def fetch_open_position(self, symbol: str) -> Optional[dict]:
+        """Fetch the current open position for a symbol from the API. Returns None if no position."""
+        if not (self.api_url and self.strategy_name):
+            return None
+        try:
+            response = requests.get(
+                f"{self.api_url}/positions",
+                params={"strategy_name": self.strategy_name, "symbol": symbol},
+                timeout=5
+            )
+            response.raise_for_status()
+            positions = response.json()
+            return positions[0] if positions else None
+        except Exception as e:
+            self.logger.error(f"Failed to fetch open position from API: {e}")
+            return None
+
     def mark_trade_completed(self):
         """Persist today's trade completion to DB so restarts don't re-enter."""
         if self.api_url and self.strategy_name:

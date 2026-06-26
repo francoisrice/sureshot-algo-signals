@@ -119,6 +119,19 @@ class ORBAzizTQQQ(TradingStrategy):
         logger.info(f"Initializing {self.name} for LIVE trading")
         if self.completedTrade:
             logger.info("Trade already completed today — will not re-enter")
+            return
+        if self.invested:
+            # Pod restarted mid-trade (or stale position from prior day).
+            # Restore direction so exit logic works — TP/SL levels are unknown so only EOD exit fires.
+            pos = self.fetch_open_position(self.tradingSymbol)
+            if pos:
+                qty = pos.get("quantity", 0)
+                self.position_direction = "LONG" if qty > 0 else "SHORT"
+                self.entry_price = pos.get("avg_price")
+                logger.warning(
+                    f"Restored {self.position_direction} position on startup: "
+                    f"qty={qty} @ avg ${self.entry_price:.2f} — TP/SL unknown, EOD exit only"
+                )
 
     def backtest_initialize(self,start_date,end_date):
         """Initialize for BACKTEST mode"""
@@ -266,26 +279,26 @@ class ORBAzizTQQQ(TradingStrategy):
         if self.invested:
             # Check exit conditions
             if self.position_direction == 'LONG':
-                if price >= self.take_profit_price:
+                if self.take_profit_price is not None and price >= self.take_profit_price:
                     logger.info(f"Take profit hit for {self.tradingSymbol}: ${price:.2f} >= ${self.take_profit_price:.2f}")
                     self.sell_all(self.tradingSymbol)
                     self.completedTrade = True
                     self.mark_trade_completed()
                     return
-                elif price <= self.stop_loss_price:
+                elif self.stop_loss_price is not None and price <= self.stop_loss_price:
                     logger.info(f"Stop loss hit for {self.tradingSymbol}: ${price:.2f} <= ${self.stop_loss_price:.2f}")
                     self.sell_all(self.tradingSymbol)
                     self.completedTrade = True
                     self.mark_trade_completed()
                     return
             if self.position_direction == 'SHORT':
-                if price <= self.take_profit_price:
+                if self.take_profit_price is not None and price <= self.take_profit_price:
                     logger.info(f"Take profit hit for {self.tradingSymbol}: ${price:.2f} <= ${self.take_profit_price:.2f}")
                     self.close_short_all(self.tradingSymbol)
                     self.completedTrade = True
                     self.mark_trade_completed()
                     return
-                elif price >= self.stop_loss_price:
+                elif self.stop_loss_price is not None and price >= self.stop_loss_price:
                     logger.info(f"Stop loss hit for {self.tradingSymbol}: ${price:.2f} >= ${self.stop_loss_price:.2f}")
                     self.close_short_all(self.tradingSymbol)
                     self.completedTrade = True
