@@ -206,7 +206,7 @@ if __name__ == "__main__":
         # Backtest mode will be handled by backtest.py at repo root
         logger.info("Strategy initialized for BACKTEST mode")
         logger.info("Run via: python backtest.py")
-    elif TRADING_MODE == "LIVE":
+    elif TRADING_MODE == "LIVE" or TRADING_MODE == "PAPER":
         # Live trading mode
         strategy.initialize()
         main(strategy)

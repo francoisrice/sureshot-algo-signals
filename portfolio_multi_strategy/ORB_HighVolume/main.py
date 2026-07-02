@@ -427,7 +427,7 @@ if __name__ == "__main__":
     if TRADING_MODE == "BACKTEST":
         logger.info("Strategy initialized for BACKTEST mode")
         logger.info("Run via: python backtest.py")
-    elif TRADING_MODE == "LIVE":
+    elif TRADING_MODE == "LIVE" or TRADING_MODE == "PAPER":
         strategy.initialize()
         main(strategy)
     elif TRADING_MODE == "OPTIMIZATION":

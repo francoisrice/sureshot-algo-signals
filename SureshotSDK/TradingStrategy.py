@@ -230,7 +230,7 @@ class TradingStrategy:
         Args:
             symbol: Stock symbol to buy
         """
-        if self.trading_mode == "LIVE":
+        if self.trading_mode == "LIVE" or self.trading_mode == "PAPER":
             current_price = self.price_fetcher(symbol)
         else:
             current_price = self.historical_price_fetcher(symbol, self.current_date)
@@ -274,7 +274,7 @@ class TradingStrategy:
         Args:
             symbol: Stock symbol to sell
         """
-        if self.trading_mode == "LIVE":
+        if self.trading_mode == "LIVE" or self.trading_mode == "PAPER":
             current_price = self.price_fetcher(symbol)
         else:
             current_price = self.historical_price_fetcher(symbol, self.current_date)
@@ -317,7 +317,7 @@ class TradingStrategy:
         Args:
             symbol: Stock symbol to sell
         """
-        if self.trading_mode == "LIVE":
+        if self.trading_mode == "LIVE" or self.trading_mode == "PAPER":
             current_price = self.price_fetcher(symbol)
         else:
             current_price = self.historical_price_fetcher(symbol, self.current_date)
@@ -361,7 +361,7 @@ class TradingStrategy:
         Args:
             symbol: Stock symbol to sell
         """
-        if self.trading_mode == "LIVE":
+        if self.trading_mode == "LIVE" or self.trading_mode == "PAPER":
             current_price = self.price_fetcher(symbol)
         else:
             current_price = self.historical_price_fetcher(symbol, self.current_date)
