@@ -17,6 +17,22 @@ GATEWAY_BASE_URL = os.environ.get('IBKR_GATEWAY_URL', 'https://localhost:5000/v1
 
 class RetryClient:
 
+    def _wait_for_bridge(self, timeout: float = 30.0, poll_interval: float = 1.0) -> bool:
+        """Poll auth/status until the IB Gateway bridge is connected after re-auth."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                resp = requests.get(f"{GATEWAY_BASE_URL}/iserver/auth/status", verify=False)
+                data = resp.json()
+                if data.get('connected') and data.get('authenticated'):
+                    logger.info("IBKR bridge connected")
+                    return True
+            except Exception:
+                pass
+            time.sleep(poll_interval)
+        logger.warning(f"wait_for_bridge: bridge not ready within {timeout}s")
+        return False
+
     def _ensure_authenticated(self):
         if confirm_auth().status_code >= 300:
             logger.warning("Session unauthenticated — re-authenticating via Playwright")
@@ -24,6 +40,7 @@ class RetryClient:
             result = sync_login()
             if result != "Login Successful":
                 raise RuntimeError("IBKR re-authentication failed")
+            self._wait_for_bridge()
 
     def _request(self, method, url, **kwargs):
         kwargs.setdefault('verify', False)
@@ -31,6 +48,15 @@ class RetryClient:
         if response.status_code >= 300:
             self._ensure_authenticated()
             response = getattr(requests, method)(url=url, **kwargs)
+        # If the gateway is authenticated but bridge not yet ready, wait and retry once.
+        try:
+            body = response.json()
+            if isinstance(body, dict) and 'no bridge' in body.get('error', '').lower():
+                logger.warning("IBKR 'no bridge' after auth — waiting for bridge then retrying")
+                self._wait_for_bridge()
+                response = getattr(requests, method)(url=url, **kwargs)
+        except Exception:
+            pass
         return response
 
     def get(self, url, verify=False):
@@ -198,6 +224,73 @@ class IBKRClient:
             time.sleep(poll_interval)
         logger.warning(f"wait_for_fill: no fill found for order {ibkr_order_id} within {timeout}s")
         return None
+
+    def _trade_symbol(self, trade: dict) -> str:
+        return (trade.get('contractDesc') or trade.get('symbol') or trade.get('ticker') or '').upper()
+
+    def _trade_side_matches(self, trade: dict, side: str) -> bool:
+        t = (trade.get('side') or '').upper()
+        if side.upper() == 'BUY':
+            return t in ('BUY', 'B', 'BOT')
+        return t in ('SELL', 'S', 'SLD')
+
+    def _fill_exec_id(self, trade: dict) -> str:
+        return str(trade.get('execution_id') or trade.get('execId') or trade.get('ibExecID') or '')
+
+    def snapshot_fill_ids(self, symbol: str, side: str) -> set:
+        """Return execution IDs of all already-known fills for symbol+side. Call before placing an order."""
+        symbol_upper = symbol.upper()
+        ids = set()
+        for trade in self.get_trades():
+            if self._trade_symbol(trade) == symbol_upper and self._trade_side_matches(trade, side):
+                exec_id = self._fill_exec_id(trade)
+                if exec_id:
+                    ids.add(exec_id)
+        return ids
+
+    def wait_for_new_fill(self, symbol: str, side: str, known_ids: set, timeout: float = 15.0, poll_interval: float = 1.0) -> dict | None:
+        """
+        Poll /iserver/account/trades for a fill matching symbol+side whose execution ID
+        is not in known_ids (i.e. appeared after the order was placed).
+        Returns the fill dict on success, None on timeout.
+        """
+        symbol_upper = symbol.upper()
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            for trade in self.get_trades():
+                if self._trade_symbol(trade) != symbol_upper:
+                    continue
+                if not self._trade_side_matches(trade, side):
+                    continue
+                exec_id = self._fill_exec_id(trade)
+                if exec_id not in known_ids:
+                    return trade
+            time.sleep(poll_interval)
+        return None
+
+    def invalidate_positions_cache(self) -> None:
+        """Bust the IBKR server-side positions cache so the next GET /positions reflects actual state."""
+        try:
+            self._client.post(f'{self.baseUrl}/portfolio/{self.account}/positions/invalidate')
+        except Exception as e:
+            logger.warning(f"invalidate_positions_cache() failed: {e}")
+
+    def get_position_size(self, symbol: str) -> float | None:
+        """Return current IBKR position size for symbol (0.0 if flat), or None if unavailable."""
+        try:
+            resp = self._client.get(f'{self.baseUrl}/portfolio/{self.account}/positions/0')
+            positions = resp.json()
+            if not isinstance(positions, list):
+                return None
+            symbol_upper = symbol.upper()
+            for pos in positions:
+                ticker = (pos.get('contractDesc') or pos.get('ticker') or '').upper()
+                if ticker == symbol_upper:
+                    return float(pos.get('position', 0))
+            return 0.0  # not in positions list means flat
+        except Exception as e:
+            logger.warning(f"get_position_size({symbol}) failed: {e}")
+            return None
 
     def fetch_positions(self):
         resp = self._client.get(f'{self.baseUrl}/portfolio/{self.account}/positions/0')

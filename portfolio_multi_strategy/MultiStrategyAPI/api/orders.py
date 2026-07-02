@@ -10,6 +10,7 @@ from datetime import datetime
 import asyncio
 import logging
 import os
+import time
 
 from ..database import get_db
 from ..models import Order, PortfolioState, Position, StrategyConfig
@@ -83,65 +84,98 @@ def execute_live_trade(order_type: str, symbol: str, quantity: float, price: flo
                 raise Exception(f"Could not fetch contract ID for {symbol}")
 
         # Place order based on type
-        if order_type == "BUY":
-            order_response = ibkr_client.buy(
-                conid=conid,
-                quantity=quantity
-            )
-            # order_response = ibkr_client.place_order(
-            #     conid=conid,
-            #     quantity=quantity,
-            #     side="BUY",
-            #     order_type="LMT",
-            #     price=price
-            # )
-        else:  # SELL
-            order_response = ibkr_client.sell(
-                conid=conid,
-                quantity=quantity
-            )
-            # order_response = ibkr_client.place_order(
-            #     conid=conid,
-            #     quantity=quantity,
-            #     side="SELL",
-            #     order_type="LMT",
-            #     price=price
-            # )
+        def _place():
+            if order_type == "BUY":
+                return ibkr_client.buy(
+                    conid=conid,
+                    quantity=quantity
+                )
+                # return ibkr_client.place_order(
+                #     conid=conid,
+                #     quantity=quantity,
+                #     side="BUY",
+                #     order_type="LMT",
+                #     price=price
+                # )
+            else:  # SELL
+                return ibkr_client.sell(
+                    conid=conid,
+                    quantity=quantity
+                )
+                # return ibkr_client.place_order(
+                #     conid=conid,
+                #     quantity=quantity,
+                #     side="SELL",
+                #     order_type="LMT",
+                #     price=price
+                # )
 
-        # Extract order ID — IBKR returns a list after confirmation, or a dict on direct success
-        if isinstance(order_response, list) and order_response:
-            first = order_response[0]
-            ibkr_order_id = first.get("order_id") or first.get("orderId") or first.get("local_order_id")
-        elif isinstance(order_response, dict):
-            ibkr_order_id = order_response.get("order_id") or order_response.get("orderId")
-        else:
-            ibkr_order_id = None
+        def _extract_order_id(resp):
+            # Extract order ID — IBKR returns a list after confirmation, or a dict on direct success
+            if isinstance(resp, list) and resp:
+                first = resp[0]
+                return first.get("order_id") or first.get("orderId") or first.get("local_order_id")
+            if isinstance(resp, dict):
+                return resp.get("order_id") or resp.get("orderId")
+            return None
 
+        def _poll_position_change(pre, timeout=31.0):
+            """Poll until IBKR position differs from pre, or timeout. Returns final position."""
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                post = ibkr_client.get_position_size(symbol)
+                if post is not None and post != pre:
+                    return post
+                time.sleep(1)
+            return ibkr_client.get_position_size(symbol)
+
+        # Snapshot position before placing order
+        pre_position = ibkr_client.get_position_size(symbol)
+        logger.info(f"Pre-order IBKR position for {symbol}: {pre_position}")
+
+        # First attempt
+        order_response = _place()
+        ibkr_order_id = _extract_order_id(order_response)
         if not ibkr_order_id:
             logger.warning(f"Order placed but could not extract order ID from response: {order_response}")
             ibkr_order_id = "unknown"
-
         logger.info(f"IBKR Order placed: {ibkr_order_id}")
 
-        fill = None
-        if ibkr_order_id and ibkr_order_id != "unknown":
-            fill = ibkr_client.wait_for_fill(ibkr_order_id)
+        # Bust the positions cache so polling reflects actual fill state
+        ibkr_client.invalidate_positions_cache()
 
-        if fill:
-            fill_price = fill.get('price') or fill.get('avgPrice') or fill.get('last_price')
-            logger.info(f"IBKR Order filled: {ibkr_order_id} @ {fill_price}")
+        post_position = _poll_position_change(pre_position) if pre_position is not None else None
+
+        if post_position is not None and post_position == pre_position:
+            # Position still unchanged — order likely did not reach IBKR; retry once
+            logger.warning(
+                f"IBKR position unchanged after {order_type} {symbol} "
+                f"(pre={pre_position}) — retrying order"
+            )
+            order_response = _place()
+            retry_id = _extract_order_id(order_response)
+            if retry_id:
+                ibkr_order_id = retry_id
+            logger.info(f"IBKR retry order placed: {ibkr_order_id}")
+            ibkr_client.invalidate_positions_cache()
+            post_position = _poll_position_change(pre_position)
+
+        if post_position is not None and post_position != pre_position:
+            logger.info(f"IBKR position confirmed: {pre_position} → {post_position}")
             return {
                 "status": "EXECUTED",
                 "execution_timestamp": datetime.utcnow(),
                 "ibkr_order_id": ibkr_order_id,
-                "fill_price": fill_price
             }
 
-        logger.warning(f"IBKR Order {ibkr_order_id} not confirmed filled within timeout — marking PENDING")
+        logger.warning(
+            f"IBKR position unchanged after order + retry "
+            f"(pre={pre_position}, post={post_position}) — marking PENDING"
+        )
         return {
             "status": "PENDING",
             "execution_timestamp": datetime.utcnow(),
-            "ibkr_order_id": ibkr_order_id
+            "ibkr_order_id": ibkr_order_id,
         }
 
     except Exception as e:
