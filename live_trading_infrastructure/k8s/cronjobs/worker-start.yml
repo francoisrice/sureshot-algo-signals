@@ -4,7 +4,7 @@ metadata:
   name: market-open
   namespace: trading
 spec:
-  schedule: "30 9 * * 1-5"    # 9:30am ET Mon-Fri
+  schedule: "25 9 * * 1-5"    # 9:25am ET Mon-Fri
   timeZone: "America/New_York"
   concurrencyPolicy: Forbid
   jobTemplate:
