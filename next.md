@@ -12,6 +12,13 @@ Trading Live, Pull LIVE balance from IBKR, Midday trade guard,
 
 ---
 
+Major Changes:
+- Refactor `portfolio_multi_strategy` to `portfolio_flagship` and name strategies accordingly
+- Add SPEC.md to strategies
+- Move logic from `portfolio_multi_strategy` that should be shared into SureshotSDK. Make it such that new portfolios can use the base logic of `portfolio_multi_strategy` without rewriting foundational logic. Any additions should be to the SDK code, accessible to all strategies, and have tests alongside the SDK to ensure stability.
+
+---
+
 - **Automated strategy rotation** (future portfolios): `POST /config/rotate-live-strategies` already supports `top_n` auto-selection by paper return %. Call this endpoint in-cluster via `http://multistrategy-api.trading.svc.cluster.local:8000/config/rotate-live-strategies` with `{"top_n": N, "reason": "Weekly auto-rotation"}`. We may need to rewrite the endpoint to accept a dict of strategies with the trading modes for each. 
 
 - **ORB mid-day restart recovery**: `initialize()` should fetch today's 9:30–9:35 bars from Yahoo Finance when the pod starts after the opening range window has passed, so any restart (manual or crash) self-heals without manual intervention.

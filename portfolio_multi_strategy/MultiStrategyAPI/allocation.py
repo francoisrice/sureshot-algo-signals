@@ -247,6 +247,9 @@ class CapitalAllocator:
             logger.info(f"Capital allocation: {allocations}")
             return allocations
 
+        elif method == "manual":
+            logger.error(f"Manual Capital allocation is not yet implemented")
+
         else:
             raise ValueError(f"Unknown allocation method: {method}")
 
