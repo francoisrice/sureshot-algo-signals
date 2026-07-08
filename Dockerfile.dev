@@ -1,0 +1,29 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install all deps up front so they're cached in the layer
+COPY SureshotSDK/requirements.txt ./sdk-requirements.txt
+COPY portfolio_multi_strategy/MultiStrategyAPI/requirements.txt ./api-requirements.txt
+RUN pip install --no-cache-dir \
+    -r sdk-requirements.txt \
+    -r api-requirements.txt \
+    scipy
+
+# Copy full source (will be overridden by volume mount in dev)
+COPY . /app
+
+# Install SDK in editable mode
+RUN pip install --no-cache-dir -e ./SureshotSDK/
+
+ENV PYTHONPATH=/app
+ENV TRADING_MODE=BACKTEST
+ENV API_URL=http://localhost:8000
+
+EXPOSE 8000
+
+CMD ["bash"]

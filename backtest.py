@@ -28,7 +28,8 @@ from SureshotSDK import BacktestRunner
 # Portfolio and strategy selection
 PORTFOLIO = "portfolio_multi_strategy"
 # STRATEGY = "IncredibleLeverage_SPXL"  # Options: IncredibleLeverage_SPXL, ORB_SPY, NakedWheel_SPY
-STRATEGY = "ORB_HighVolume"  # Options: IncredibleLeverage_SPXL, ORB_SPY, NakedWheel_SPY
+# STRATEGY = "ORB_HighVolume"  # Options: IncredibleLeverage_SPXL, ORB_SPY, NakedWheel_SPY
+STRATEGY = "ShortIronButterfly_SPY"
 
 # Backtest date range
 # START_DATE = datetime(2023, 6, 1)
@@ -36,7 +37,7 @@ STRATEGY = "ORB_HighVolume"  # Options: IncredibleLeverage_SPXL, ORB_SPY, NakedW
 # END_DATE = datetime(2025, 12, 31)
 
 START_DATE = datetime(2025, 5, 1)
-END_DATE = datetime(2025, 9, 30)
+END_DATE = datetime(2025, 5, 31)
 
 # Initial capital
 INITIAL_CASH = 100000
