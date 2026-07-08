@@ -155,8 +155,30 @@ class CapitalAllocator:
             Dict mapping strategy names to allocated capital
         """
         if method == "equal_weight":
-            allocation_per_strategy = total_capital / len(strategies)
-            return {strategy: allocation_per_strategy for strategy in strategies}
+            allocations = {}
+            locked_capital = 0.0
+            unlocked_strategies = []
+
+            for strategy in strategies:
+                state = db.query(PortfolioState).filter(
+                    PortfolioState.strategy_name == strategy
+                ).first()
+
+                if state and state.position_locked:
+                    # Strategy locked, keep current allocation
+                    allocations[strategy] = state.allocated_capital
+                    locked_capital += state.allocated_capital
+                    logger.info(f"Strategy {strategy} is locked with position, keeping allocation ${state.allocated_capital:,.2f}")
+                else:
+                    unlocked_strategies.append(strategy)
+
+            if unlocked_strategies:
+                available_capital = total_capital - locked_capital
+                allocation_per_strategy = available_capital / len(unlocked_strategies)
+                for strategy in unlocked_strategies:
+                    allocations[strategy] = allocation_per_strategy
+
+            return allocations
 
         elif method == "risk_adjusted":
             # Get performance scores for each strategy

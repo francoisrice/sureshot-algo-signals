@@ -214,10 +214,9 @@ async def rebalance_portfolio(
                 ).first()
 
                 if portfolio:
-                    # Update cash to match new allocation (only for unlocked strategies)
-                    cash_change = details['change']
-                    portfolio.cash += cash_change
-                    logger.info(f"Rebalanced {strategy_name}: ${details['previous']:,.2f} -> ${details['allocated']:,.2f} (change: ${cash_change:+,.2f})")
+                    portfolio.cash = details['allocated']
+                    portfolio.total_value = portfolio.cash
+                    logger.info(f"Rebalanced {strategy_name}: ${details['previous']:,.2f} -> ${details['allocated']:,.2f} (change: ${details['change']:+,.2f})")
 
         db.commit()
 
