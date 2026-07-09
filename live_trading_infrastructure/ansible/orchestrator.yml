@@ -47,11 +47,11 @@
           - "--include=roles/***"
           - "--exclude=*"
 
-    - name: Set up worker provision cron (9:00am ET Mon-Fri)
+    - name: Set up worker provision cron (8:30am ET Mon-Fri)
       cron:
         name: "provision trading worker"
-        minute: "0"
-        hour: "9"
+        minute: "30"
+        hour: "8"
         weekday: "1-5"
         job: >
           cd /opt/trading/ansible &&
