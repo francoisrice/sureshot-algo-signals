@@ -97,11 +97,13 @@
         mode: '0600'
 
     - name: Wait for trading-worker node to appear in cluster
-      command: microk8s kubectl get node trading-worker
-      register: node_check
-      retries: 60
-      delay: 20
-      until: node_check.rc == 0
+      shell: |
+        start=$(date +%s)
+        until microk8s kubectl get node trading-worker; do
+          elapsed=$(( $(date +%s) - start ))
+          echo "$(date -Is) [wait-for-node] still waiting for trading-worker to join (${elapsed}s elapsed)" >> /var/log/trading/provision_worker.log
+          sleep 20
+        done
 
     - name: Label worker node for trading-app scheduling
       command: microk8s kubectl label node trading-worker trading-node=worker --overwrite
