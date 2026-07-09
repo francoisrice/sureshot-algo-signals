@@ -41,6 +41,10 @@ class RetryClient:
             if result != "Login Successful":
                 raise RuntimeError("IBKR re-authentication failed")
             self._wait_for_bridge()
+            try:
+                requests.get(f"{GATEWAY_BASE_URL}/iserver/accounts", verify=False)
+            except Exception as e:
+                logger.warning(f"Failed to prime IBKR account for order routing: {e}")
 
     def _request(self, method, url, **kwargs):
         kwargs.setdefault('verify', False)
@@ -48,11 +52,10 @@ class RetryClient:
         if response.status_code >= 300:
             self._ensure_authenticated()
             response = getattr(requests, method)(url=url, **kwargs)
-        # If the gateway is authenticated but bridge not yet ready, wait and retry once.
         try:
             body = response.json()
-            if isinstance(body, dict) and 'no bridge' in body.get('error', '').lower():
-                logger.warning("IBKR 'no bridge' after auth — waiting for bridge then retrying")
+            if isinstance(body, dict) and body.get('error'):
+                logger.warning(f"IBKR error after auth ({body['error']!r}) — waiting for bridge then retrying")
                 self._wait_for_bridge()
                 response = getattr(requests, method)(url=url, **kwargs)
         except Exception:
