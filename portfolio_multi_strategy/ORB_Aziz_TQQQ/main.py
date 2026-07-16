@@ -281,41 +281,53 @@ class ORBAzizTQQQ(TradingStrategy):
             if self.position_direction == 'LONG':
                 if self.take_profit_price is not None and price >= self.take_profit_price:
                     logger.info(f"Take profit hit for {self.tradingSymbol}: ${price:.2f} >= ${self.take_profit_price:.2f}")
-                    self.sell_all(self.tradingSymbol)
-                    self.completedTrade = True
-                    self.mark_trade_completed()
+                    if self.sell_all(self.tradingSymbol):
+                        self.completedTrade = True
+                        self.mark_trade_completed()
+                    else:
+                        logger.error(f"Take profit close failed for {self.tradingSymbol} — will retry next bar")
                     return
                 elif self.stop_loss_price is not None and price <= self.stop_loss_price:
                     logger.info(f"Stop loss hit for {self.tradingSymbol}: ${price:.2f} <= ${self.stop_loss_price:.2f}")
-                    self.sell_all(self.tradingSymbol)
-                    self.completedTrade = True
-                    self.mark_trade_completed()
+                    if self.sell_all(self.tradingSymbol):
+                        self.completedTrade = True
+                        self.mark_trade_completed()
+                    else:
+                        logger.error(f"Stop loss close failed for {self.tradingSymbol} — will retry next bar")
                     return
             if self.position_direction == 'SHORT':
                 if self.take_profit_price is not None and price <= self.take_profit_price:
                     logger.info(f"Take profit hit for {self.tradingSymbol}: ${price:.2f} <= ${self.take_profit_price:.2f}")
-                    self.close_short_all(self.tradingSymbol)
-                    self.completedTrade = True
-                    self.mark_trade_completed()
+                    if self.close_short_all(self.tradingSymbol):
+                        self.completedTrade = True
+                        self.mark_trade_completed()
+                    else:
+                        logger.error(f"Take profit close failed for {self.tradingSymbol} — will retry next bar")
                     return
                 elif self.stop_loss_price is not None and price >= self.stop_loss_price:
                     logger.info(f"Stop loss hit for {self.tradingSymbol}: ${price:.2f} >= ${self.stop_loss_price:.2f}")
-                    self.close_short_all(self.tradingSymbol)
-                    self.completedTrade = True
-                    self.mark_trade_completed()
+                    if self.close_short_all(self.tradingSymbol):
+                        self.completedTrade = True
+                        self.mark_trade_completed()
+                    else:
+                        logger.error(f"Stop loss close failed for {self.tradingSymbol} — will retry next bar")
                     return
 
             # End of day exit
             if current_time >= time(15, 55):
                 logger.info(f"End of day exit for {self.tradingSymbol}")
                 if self.position_direction == 'LONG':
-                    self.sell_all(self.tradingSymbol)
-                    self.completedTrade = True
-                    self.mark_trade_completed()
+                    if self.sell_all(self.tradingSymbol):
+                        self.completedTrade = True
+                        self.mark_trade_completed()
+                    else:
+                        logger.error(f"EOD close failed for {self.tradingSymbol} — will retry next bar")
                 if self.position_direction == 'SHORT':
-                    self.close_short_all(self.tradingSymbol)
-                    self.completedTrade = True
-                    self.mark_trade_completed()
+                    if self.close_short_all(self.tradingSymbol):
+                        self.completedTrade = True
+                        self.mark_trade_completed()
+                    else:
+                        logger.error(f"EOD close failed for {self.tradingSymbol} — will retry next bar")
                 return
         else:
             # Entry logic: Long breakout

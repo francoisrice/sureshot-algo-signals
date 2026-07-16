@@ -267,12 +267,15 @@ class TradingStrategy:
             else:
                 self.logger.error("No API or Portfolio configured for buy_all")
 
-    def sell_all(self, symbol: str):
+    def sell_all(self, symbol: str) -> bool:
         """
         Sell all shares of a symbol
 
         Args:
             symbol: Stock symbol to sell
+
+        Returns:
+            True if the close executed (or was applied locally), False otherwise.
         """
         if self.trading_mode == "LIVE" or self.trading_mode == "PAPER":
             current_price = self.price_fetcher(symbol)
@@ -281,7 +284,7 @@ class TradingStrategy:
 
         if not current_price:
             self.logger.error(f"Cannot sell {symbol}: no price available")
-            return
+            return False
 
         # If API is configured, use API-managed state
         if self.api_url and self.strategy_name:
@@ -301,14 +304,18 @@ class TradingStrategy:
                     f"SELL_ALL: {data['quantity']} {symbol} @ ${data['price']:.2f}, "
                     f"Cash remaining: ${data['remaining_cash']:.2f}"
                 )
+                return True
             except Exception as e:
                 self.logger.error(f"Failed to execute sell_all via API: {e}")
+                return False
         else:
             # Fallback to local portfolio if no API
             if self.portfolio:
                 self.portfolio.sell_all(symbol, current_price)
+                return True
             else:
                 self.logger.error("No API or Portfolio configured for sell_all")
+                return False
 
     def sell_short_all(self, symbol: str, quantityOverride: int | None = None):
         """
@@ -354,12 +361,15 @@ class TradingStrategy:
             else:
                 self.logger.error("No API or Portfolio configured for sell_short_all")
 
-    def close_short_all(self, symbol: str):
+    def close_short_all(self, symbol: str) -> bool:
         """
         Close all short shares of a symbol
 
         Args:
             symbol: Stock symbol to sell
+
+        Returns:
+            True if the close executed (or was applied locally), False otherwise.
         """
         if self.trading_mode == "LIVE" or self.trading_mode == "PAPER":
             current_price = self.price_fetcher(symbol)
@@ -368,7 +378,7 @@ class TradingStrategy:
 
         if not current_price:
             self.logger.error(f"Cannot close short {symbol}: no price available")
-            return
+            return False
 
         # If API is configured, use API-managed state
         if self.api_url and self.strategy_name:
@@ -388,14 +398,18 @@ class TradingStrategy:
                     f"CLOSE_SHORT_ALL: {data['quantity']} {symbol} @ ${data['price']:.2f}, "
                     f"Cash remaining: ${data['remaining_cash']:.2f}"
                 )
+                return True
             except Exception as e:
                 self.logger.error(f"Failed to execute sell_all via API: {e}")
+                return False
         else:
             # Fallback to local portfolio if no API
             if self.portfolio:
                 self.portfolio.close_short_all(symbol, current_price)
+                return True
             else:
                 self.logger.error("No API or Portfolio configured for close_short_all")
+                return False
 
     @property
     def invested(self):
