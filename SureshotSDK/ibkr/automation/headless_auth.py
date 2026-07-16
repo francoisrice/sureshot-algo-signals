@@ -37,31 +37,32 @@ def sync_login():
             headless=True,
             args=['--no-sandbox', '--disable-dev-shm-usage']
         )
-        context = browser.new_context(ignore_https_errors=True)
-        page = context.new_page()
-        page.goto(f'{GATEWAY_URL}/')
-        page.wait_for_load_state('networkidle')
-        page.fill('#xyz-field-username', loginA)
-        page.fill('#xyz-field-password', loginB)
-
-        page.click('button[type="submit"]')
-
-        page.wait_for_selector('.xyz-multipleselect', state='visible')
-        page.select_option('.xyz-multipleselect', value='4')
-
-        page.wait_for_selector('#xyz-field-silver-response', state='visible')
-        page.fill('#xyz-field-silver-response', get_totp_code(loginC))
-
-        page.locator('button:has-text("Login")').locator('visible=true').first.click()
-
         try:
-            page.wait_for_selector('text=Client login succeeds', timeout=5000)
+            context = browser.new_context(ignore_https_errors=True)
+            page = context.new_page()
+            page.goto(f'{GATEWAY_URL}/')
+            page.wait_for_selector('#xyz-field-username', state='visible', timeout=45000)
+            page.fill('#xyz-field-username', loginA)
+            page.fill('#xyz-field-password', loginB)
+
+            page.click('button[type="submit"]')
+
+            page.wait_for_selector('.xyz-multipleselect', state='visible')
+            page.select_option('.xyz-multipleselect', value='4')
+
+            page.wait_for_selector('#xyz-field-silver-response', state='visible')
+            page.fill('#xyz-field-silver-response', get_totp_code(loginC))
+
+            page.locator('button:has-text("Login")').locator('visible=true').first.click()
+
+            try:
+                page.wait_for_selector('text=Client login succeeds', timeout=5000)
+                return "Login Successful"
+            except Exception:
+                page.screenshot(path='Failed_Login.png')
+                return "Login Failed"
+        finally:
             browser.close()
-            return "Login Successful"
-        except Exception:
-            page.screenshot(path='Failed_Login.png')
-            browser.close()
-            return "Login Failed"
 
 
 async def async_login():
@@ -71,26 +72,27 @@ async def async_login():
             headless=True,
             args=['--no-sandbox', '--disable-dev-shm-usage']
         )
-        context = await browser.new_context(ignore_https_errors=True)
-        page = await context.new_page()
-        await page.goto(f'{GATEWAY_URL}/')
-        await page.wait_for_load_state('networkidle')
-        await page.fill('#xyz-field-username', loginA)
-        await page.fill('#xyz-field-password', loginB)
-        await page.click('button[type="submit"]')
-        await page.wait_for_selector('.xyz-multipleselect', state='visible')
-        await page.select_option('.xyz-multipleselect', value='4')
-        await page.wait_for_selector('#xyz-field-silver-response', state='visible')
-        await page.fill('#xyz-field-silver-response', get_totp_code(loginC))
-        await page.locator('button:has-text("Login")').locator('visible=true').first.click()
         try:
-            await page.wait_for_selector('text=Client login succeeds', timeout=5000)
+            context = await browser.new_context(ignore_https_errors=True)
+            page = await context.new_page()
+            await page.goto(f'{GATEWAY_URL}/')
+            await page.wait_for_selector('#xyz-field-username', state='visible', timeout=45000)
+            await page.fill('#xyz-field-username', loginA)
+            await page.fill('#xyz-field-password', loginB)
+            await page.click('button[type="submit"]')
+            await page.wait_for_selector('.xyz-multipleselect', state='visible')
+            await page.select_option('.xyz-multipleselect', value='4')
+            await page.wait_for_selector('#xyz-field-silver-response', state='visible')
+            await page.fill('#xyz-field-silver-response', get_totp_code(loginC))
+            await page.locator('button:has-text("Login")').locator('visible=true').first.click()
+            try:
+                await page.wait_for_selector('text=Client login succeeds', timeout=5000)
+                return "Login Successful"
+            except Exception:
+                await page.screenshot(path='Failed_Login.png')
+                return "Login Failed"
+        finally:
             await browser.close()
-            return "Login Successful"
-        except Exception:
-            await page.screenshot(path='Failed_Login.png')
-            await browser.close()
-            return "Login Failed"
 
 
 if __name__ == "__main__":
