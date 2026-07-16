@@ -15,6 +15,18 @@ logger = logging.getLogger(__name__)
 GATEWAY_BASE_URL = os.environ.get('IBKR_GATEWAY_URL', 'https://localhost:5000/v1/api')
 
 
+def _is_session_authenticated(auth_response) -> bool:
+    """IBKR's /iserver/auth/status always returns HTTP 200 — real session
+    state lives in the JSON body, not the status code."""
+    if auth_response.status_code >= 300:
+        return False
+    try:
+        data = auth_response.json()
+        return bool(data.get('authenticated')) and bool(data.get('connected'))
+    except Exception:
+        return False
+
+
 class RetryClient:
 
     def _wait_for_bridge(self, timeout: float = 30.0, poll_interval: float = 1.0) -> bool:
@@ -34,7 +46,7 @@ class RetryClient:
         return False
 
     def _ensure_authenticated(self):
-        if confirm_auth().status_code >= 300:
+        if not _is_session_authenticated(confirm_auth()):
             logger.warning("Session unauthenticated — re-authenticating via Playwright")
             from .headless_auth import sync_login
             result = sync_login()
@@ -328,7 +340,7 @@ class IBKRClient:
         from .headless_auth import async_login
         try:
             auth_resp = await asyncio.to_thread(confirm_auth)
-            if auth_resp.status_code >= 300:
+            if not _is_session_authenticated(auth_resp):
                 logger.warning("Session unauthenticated — re-authenticating via Playwright")
                 result = await async_login()
                 if result != "Login Successful":
