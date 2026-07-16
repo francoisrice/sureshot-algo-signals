@@ -56,3 +56,11 @@ spec:
           initialDelaySeconds: 90
           periodSeconds: 30
           failureThreshold: 3
+        volumeMounts:
+        - name: logback-config
+          mountPath: /opt/ibkr/root/logback.xml
+          subPath: logback.xml
+      volumes:
+      - name: logback-config
+        configMap:
+          name: ib-gateway-logback

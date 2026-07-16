@@ -1,0 +1,56 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ib-gateway-logback
+  namespace: trading
+data:
+  logback.xml: |
+    <?xml version="1.0" encoding="UTF-8"?>
+    <configuration scan="true" scanPeriod="10 seconds">
+
+        <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+                <fileNamePattern>logs/gw.%d{yyyy-MM-dd}.log</fileNamePattern>
+                <maxHistory>21</maxHistory>
+            </rollingPolicy>
+            <encoder>
+                <pattern>%d{HH:mm:ss.SSS} %-5level %thread %-20logger{0} : %message%n%ex</pattern>
+            </encoder>
+        </appender>
+        <appender name="MESSAGELOG" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+                <fileNamePattern>logs/gw.message.%d{yyyy-MM-dd}.log</fileNamePattern>
+                <maxHistory>21</maxHistory>
+            </rollingPolicy>
+            <encoder>
+                <pattern>%message%n</pattern>
+            </encoder>
+        </appender>
+
+        <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder>
+                <pattern>%d{HH:mm:ss.SSS} %-5level %thread %-20logger{0} : %message%n%ex</pattern>
+            </encoder>
+        </appender>
+
+        <logger name="HttpMessageLogger" level="ALL" additivity="false">
+            <appender-ref ref="MESSAGELOG" />
+            <appender-ref ref="STDOUT" />
+        </logger>
+
+        <logger name="ibgroup.web.core.clientportal.gw.core.CookieManager" level="ALL" additivity="false">
+            <appender-ref ref="FILE" />
+            <appender-ref ref="STDOUT" />
+        </logger>
+
+        <logger name="io.netty" level="ALL" additivity="false">
+            <appender-ref ref="FILE" />
+            <appender-ref ref="STDOUT" />
+        </logger>
+
+        <root level="ALL">
+            <appender-ref ref="STDOUT" />
+            <appender-ref ref="FILE" />
+        </root>
+
+    </configuration>
