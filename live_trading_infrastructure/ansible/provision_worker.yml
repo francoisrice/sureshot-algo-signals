@@ -14,6 +14,7 @@
     ssh_key_id: "{{ lookup('env', 'VULTR_SSH_KEY_ID') }}"
     worker_plan: "vx1-g-2c-8g-120s"
     worker_region: "ewr"
+    worker_fallback_region: "atl"
     worker_os_id: 2284
 
   tasks:
@@ -70,7 +71,7 @@
       command: base64 -w 0 /tmp/worker_userdata.sh
       register: userdata_b64
 
-    - name: Provision VX1 worker via Vultr API
+    - name: Provision VX1 worker via Vultr API (primary region)
       uri:
         url: "https://api.vultr.com/v2/instances"
         method: POST
@@ -87,8 +88,51 @@
           ssh_key_ids: ["{{ ssh_key_id }}"]
           backups: "disabled"
           user_data: "{{ userdata_b64.stdout }}"
+        status_code: [202, 400]
+      register: worker_response_primary
+      until: worker_response_primary.status == 202
+      retries: 2
+      delay: 20
+      failed_when: false
+      # Transient Vultr capacity errors (e.g. "plan is not available in the
+      # selected region") often clear within a minute or two — retry the
+      # primary region a couple of times before giving up on it entirely.
+
+    - name: Log primary-region failure and region fallback
+      lineinfile:
+        path: /var/log/trading/provision_worker.log
+        line: "{{ lookup('pipe', 'date -Is') }} [provision] primary region {{ worker_region }} failed after retries ({{ worker_response_primary.json.error | default('unknown error') }}); falling back to {{ worker_fallback_region }}"
+        create: yes
+      when: worker_response_primary.status != 202
+
+    - name: Provision VX1 worker via Vultr API (fallback region)
+      uri:
+        url: "https://api.vultr.com/v2/instances"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ vultr_api_key }}"
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          label: "trading-worker"
+          plan: "{{ worker_plan }}"
+          region: "{{ worker_fallback_region }}"
+          os_id: "{{ worker_os_id }}"
+          hostname: "trading-worker"
+          ssh_key_ids: ["{{ ssh_key_id }}"]
+          backups: "disabled"
+          user_data: "{{ userdata_b64.stdout }}"
         status_code: 202
-      register: worker_response
+      register: worker_response_fallback
+      when: worker_response_primary.status != 202
+      # Only reached if the primary region is still failing after retries above —
+      # never runs when the primary region already succeeded, so we can't end up
+      # accidentally provisioning two worker instances.
+
+    - name: Record which region actually provisioned the worker
+      set_fact:
+        worker_response: "{{ worker_response_fallback if (worker_response_primary.status != 202) else worker_response_primary }}"
+        worker_actual_region: "{{ worker_fallback_region if (worker_response_primary.status != 202) else worker_region }}"
 
     - name: Save worker instance ID for deprovisioning
       copy:
