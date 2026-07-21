@@ -281,7 +281,7 @@ class ORBAzizTQQQ(TradingStrategy):
             if self.position_direction == 'LONG':
                 if self.take_profit_price is not None and price >= self.take_profit_price:
                     logger.info(f"Take profit hit for {self.tradingSymbol}: ${price:.2f} >= ${self.take_profit_price:.2f}")
-                    if self.sell_all(self.tradingSymbol):
+                    if self.sell_all(self.tradingSymbol, price=price):
                         self.completedTrade = True
                         self.mark_trade_completed()
                     else:
@@ -289,7 +289,7 @@ class ORBAzizTQQQ(TradingStrategy):
                     return
                 elif self.stop_loss_price is not None and price <= self.stop_loss_price:
                     logger.info(f"Stop loss hit for {self.tradingSymbol}: ${price:.2f} <= ${self.stop_loss_price:.2f}")
-                    if self.sell_all(self.tradingSymbol):
+                    if self.sell_all(self.tradingSymbol, price=price):
                         self.completedTrade = True
                         self.mark_trade_completed()
                     else:
@@ -298,7 +298,7 @@ class ORBAzizTQQQ(TradingStrategy):
             if self.position_direction == 'SHORT':
                 if self.take_profit_price is not None and price <= self.take_profit_price:
                     logger.info(f"Take profit hit for {self.tradingSymbol}: ${price:.2f} <= ${self.take_profit_price:.2f}")
-                    if self.close_short_all(self.tradingSymbol):
+                    if self.close_short_all(self.tradingSymbol, price=price):
                         self.completedTrade = True
                         self.mark_trade_completed()
                     else:
@@ -306,7 +306,7 @@ class ORBAzizTQQQ(TradingStrategy):
                     return
                 elif self.stop_loss_price is not None and price >= self.stop_loss_price:
                     logger.info(f"Stop loss hit for {self.tradingSymbol}: ${price:.2f} >= ${self.stop_loss_price:.2f}")
-                    if self.close_short_all(self.tradingSymbol):
+                    if self.close_short_all(self.tradingSymbol, price=price):
                         self.completedTrade = True
                         self.mark_trade_completed()
                     else:
@@ -317,13 +317,13 @@ class ORBAzizTQQQ(TradingStrategy):
             if current_time >= time(15, 55):
                 logger.info(f"End of day exit for {self.tradingSymbol}")
                 if self.position_direction == 'LONG':
-                    if self.sell_all(self.tradingSymbol):
+                    if self.sell_all(self.tradingSymbol, price=price):
                         self.completedTrade = True
                         self.mark_trade_completed()
                     else:
                         logger.error(f"EOD close failed for {self.tradingSymbol} — will retry next bar")
                 if self.position_direction == 'SHORT':
-                    if self.close_short_all(self.tradingSymbol):
+                    if self.close_short_all(self.tradingSymbol, price=price):
                         self.completedTrade = True
                         self.mark_trade_completed()
                     else:
@@ -345,7 +345,7 @@ class ORBAzizTQQQ(TradingStrategy):
                     logger.info(f"Entering LONG {self.tradingSymbol}: {position_size} shares @ ${price:.2f}")
                     logger.info(f"Take Profit: ${self.take_profit_price:.2f}, Stop Loss: ${self.stop_loss_price:.2f}")
 
-                    self.buy_all(self.tradingSymbol, position_size)
+                    self.buy_all(self.tradingSymbol, position_size, price=price)
             
             elif price < self.opening_range_open:
                 logger.info(f"Short: ${price:.2f} < ${self.opening_range_open:.2f}")
@@ -361,7 +361,7 @@ class ORBAzizTQQQ(TradingStrategy):
                     logger.info(f"Entering SHORT {self.tradingSymbol}: -{position_size} shares @ ${price:.2f}")
                     logger.info(f"Take Profit: ${self.take_profit_price:.2f}, Stop Loss: ${self.stop_loss_price:.2f}")
 
-                    self.sell_short_all(self.tradingSymbol, position_size)
+                    self.sell_short_all(self.tradingSymbol, position_size, price=price)
             else:
                 self.completedTrade = True
 

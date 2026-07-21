@@ -223,15 +223,17 @@ class TradingStrategy:
         """
         self.portfolio.reset(amount)
 
-    def buy_all(self, symbol: str, quantityOverride: int | None = None):
+    def buy_all(self, symbol: str, quantityOverride: int | None = None, price: float | None = None):
         """
         Buy all possible shares of a symbol with available cash
 
         Args:
             symbol: Stock symbol to buy
+            price: Fallback price to use if a fresh quote can't be fetched
+                (e.g. the bar price the caller already used to trigger this entry)
         """
         if self.trading_mode == "LIVE" or self.trading_mode == "PAPER":
-            current_price = self.price_fetcher(symbol)
+            current_price = self.price_fetcher(symbol) or price
         else:
             current_price = self.historical_price_fetcher(symbol, self.current_date)
 
@@ -267,18 +269,20 @@ class TradingStrategy:
             else:
                 self.logger.error("No API or Portfolio configured for buy_all")
 
-    def sell_all(self, symbol: str) -> bool:
+    def sell_all(self, symbol: str, price: float | None = None) -> bool:
         """
         Sell all shares of a symbol
 
         Args:
             symbol: Stock symbol to sell
+            price: Fallback price to use if a fresh quote can't be fetched
+                (e.g. the bar price the caller already used to trigger this exit)
 
         Returns:
             True if the close executed (or was applied locally), False otherwise.
         """
         if self.trading_mode == "LIVE" or self.trading_mode == "PAPER":
-            current_price = self.price_fetcher(symbol)
+            current_price = self.price_fetcher(symbol) or price
         else:
             current_price = self.historical_price_fetcher(symbol, self.current_date)
 
@@ -317,15 +321,17 @@ class TradingStrategy:
                 self.logger.error("No API or Portfolio configured for sell_all")
                 return False
 
-    def sell_short_all(self, symbol: str, quantityOverride: int | None = None):
+    def sell_short_all(self, symbol: str, quantityOverride: int | None = None, price: float | None = None):
         """
         Sell short all shares of a symbol
 
         Args:
             symbol: Stock symbol to sell
+            price: Fallback price to use if a fresh quote can't be fetched
+                (e.g. the bar price the caller already used to trigger this entry)
         """
         if self.trading_mode == "LIVE" or self.trading_mode == "PAPER":
-            current_price = self.price_fetcher(symbol)
+            current_price = self.price_fetcher(symbol) or price
         else:
             current_price = self.historical_price_fetcher(symbol, self.current_date)
 
@@ -361,18 +367,20 @@ class TradingStrategy:
             else:
                 self.logger.error("No API or Portfolio configured for sell_short_all")
 
-    def close_short_all(self, symbol: str) -> bool:
+    def close_short_all(self, symbol: str, price: float | None = None) -> bool:
         """
         Close all short shares of a symbol
 
         Args:
             symbol: Stock symbol to sell
+            price: Fallback price to use if a fresh quote can't be fetched
+                (e.g. the bar price the caller already used to trigger this exit)
 
         Returns:
             True if the close executed (or was applied locally), False otherwise.
         """
         if self.trading_mode == "LIVE" or self.trading_mode == "PAPER":
-            current_price = self.price_fetcher(symbol)
+            current_price = self.price_fetcher(symbol) or price
         else:
             current_price = self.historical_price_fetcher(symbol, self.current_date)
 
