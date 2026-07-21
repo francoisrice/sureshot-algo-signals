@@ -3,11 +3,42 @@ from playwright.sync_api import sync_playwright
 from playwright.async_api import async_playwright
 import pyotp
 import os
+import logging
 import urllib3
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+logger = logging.getLogger(__name__)
+
 GATEWAY_URL = os.environ.get('IBKR_GATEWAY_HTTP_URL', 'https://localhost:5000')
+
+
+def _log_failure_context(page, prefix):
+    try:
+        page.screenshot(path=f'{prefix}.png')
+    except Exception as e:
+        logger.warning(f"Could not capture screenshot: {e}")
+    try:
+        logger.error(
+            f"Login flow failed at url={page.url!r} title={page.title()!r} "
+            f"content={page.content()[:2000]!r}"
+        )
+    except Exception as e:
+        logger.warning(f"Could not capture page content: {e}")
+
+
+async def _log_failure_context_async(page, prefix):
+    try:
+        await page.screenshot(path=f'{prefix}.png')
+    except Exception as e:
+        logger.warning(f"Could not capture screenshot: {e}")
+    try:
+        logger.error(
+            f"Login flow failed at url={page.url!r} title={await page.title()!r} "
+            f"content={(await page.content())[:2000]!r}"
+        )
+    except Exception as e:
+        logger.warning(f"Could not capture page content: {e}")
 
 
 def _get_credentials():
@@ -40,27 +71,31 @@ def sync_login():
         try:
             context = browser.new_context(ignore_https_errors=True)
             page = context.new_page()
-            page.goto(f'{GATEWAY_URL}/')
-            page.wait_for_selector('#xyz-field-username', state='visible', timeout=45000)
-            page.fill('#xyz-field-username', loginA)
-            page.fill('#xyz-field-password', loginB)
-
-            page.click('button[type="submit"]')
-
-            page.wait_for_selector('.xyz-multipleselect', state='visible')
-            page.select_option('.xyz-multipleselect', value='4')
-
-            page.wait_for_selector('#xyz-field-silver-response', state='visible')
-            page.fill('#xyz-field-silver-response', get_totp_code(loginC))
-
-            page.locator('button:has-text("Login")').locator('visible=true').first.click()
-
             try:
-                page.wait_for_selector('text=Client login succeeds', timeout=5000)
-                return "Login Successful"
+                page.goto(f'{GATEWAY_URL}/')
+                page.wait_for_selector('#xyz-field-username', state='visible', timeout=45000)
+                page.fill('#xyz-field-username', loginA)
+                page.fill('#xyz-field-password', loginB)
+
+                page.click('button[type="submit"]')
+
+                page.wait_for_selector('.xyz-multipleselect', state='visible')
+                page.select_option('.xyz-multipleselect', value='4')
+
+                page.wait_for_selector('#xyz-field-silver-response', state='visible')
+                page.fill('#xyz-field-silver-response', get_totp_code(loginC))
+
+                page.locator('button:has-text("Login")').locator('visible=true').first.click()
+
+                try:
+                    page.wait_for_selector('text=Client login succeeds', timeout=5000)
+                    return "Login Successful"
+                except Exception:
+                    _log_failure_context(page, 'Failed_Login')
+                    return "Login Failed"
             except Exception:
-                page.screenshot(path='Failed_Login.png')
-                return "Login Failed"
+                _log_failure_context(page, 'Failed_Login')
+                raise
         finally:
             browser.close()
 
@@ -75,22 +110,26 @@ async def async_login():
         try:
             context = await browser.new_context(ignore_https_errors=True)
             page = await context.new_page()
-            await page.goto(f'{GATEWAY_URL}/')
-            await page.wait_for_selector('#xyz-field-username', state='visible', timeout=45000)
-            await page.fill('#xyz-field-username', loginA)
-            await page.fill('#xyz-field-password', loginB)
-            await page.click('button[type="submit"]')
-            await page.wait_for_selector('.xyz-multipleselect', state='visible')
-            await page.select_option('.xyz-multipleselect', value='4')
-            await page.wait_for_selector('#xyz-field-silver-response', state='visible')
-            await page.fill('#xyz-field-silver-response', get_totp_code(loginC))
-            await page.locator('button:has-text("Login")').locator('visible=true').first.click()
             try:
-                await page.wait_for_selector('text=Client login succeeds', timeout=5000)
-                return "Login Successful"
+                await page.goto(f'{GATEWAY_URL}/')
+                await page.wait_for_selector('#xyz-field-username', state='visible', timeout=45000)
+                await page.fill('#xyz-field-username', loginA)
+                await page.fill('#xyz-field-password', loginB)
+                await page.click('button[type="submit"]')
+                await page.wait_for_selector('.xyz-multipleselect', state='visible')
+                await page.select_option('.xyz-multipleselect', value='4')
+                await page.wait_for_selector('#xyz-field-silver-response', state='visible')
+                await page.fill('#xyz-field-silver-response', get_totp_code(loginC))
+                await page.locator('button:has-text("Login")').locator('visible=true').first.click()
+                try:
+                    await page.wait_for_selector('text=Client login succeeds', timeout=5000)
+                    return "Login Successful"
+                except Exception:
+                    await _log_failure_context_async(page, 'Failed_Login')
+                    return "Login Failed"
             except Exception:
-                await page.screenshot(path='Failed_Login.png')
-                return "Login Failed"
+                await _log_failure_context_async(page, 'Failed_Login')
+                raise
         finally:
             await browser.close()
 
