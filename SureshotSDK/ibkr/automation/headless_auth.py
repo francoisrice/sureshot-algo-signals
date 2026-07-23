@@ -13,7 +13,21 @@ logger = logging.getLogger(__name__)
 GATEWAY_URL = os.environ.get('IBKR_GATEWAY_HTTP_URL', 'https://localhost:5000')
 
 
-def _log_failure_context(page, prefix):
+def _attach_diagnostics(page):
+    """Collect console messages, uncaught page errors, and failed requests
+    for the lifetime of the page so failures can show *why* the client-side
+    login widget didn't render, not just that it didn't."""
+    console_messages = []
+    failed_requests = []
+    page.on('console', lambda msg: console_messages.append(f"[{msg.type}] {msg.text}"))
+    page.on('pageerror', lambda exc: console_messages.append(f"[pageerror] {exc}"))
+    page.on('requestfailed', lambda req: failed_requests.append(
+        f"{req.method} {req.url} -> {req.failure}"
+    ))
+    return console_messages, failed_requests
+
+
+def _log_failure_context(page, prefix, console_messages=None, failed_requests=None):
     try:
         page.screenshot(path=f'{prefix}.png')
     except Exception as e:
@@ -21,13 +35,15 @@ def _log_failure_context(page, prefix):
     try:
         logger.error(
             f"Login flow failed at url={page.url!r} title={page.title()!r} "
-            f"content={page.content()[:2000]!r}"
+            f"body_text={page.inner_text('body')[:4000]!r} "
+            f"console={(console_messages or [])[-20:]!r} "
+            f"failed_requests={(failed_requests or [])[-20:]!r}"
         )
     except Exception as e:
         logger.warning(f"Could not capture page content: {e}")
 
 
-async def _log_failure_context_async(page, prefix):
+async def _log_failure_context_async(page, prefix, console_messages=None, failed_requests=None):
     try:
         await page.screenshot(path=f'{prefix}.png')
     except Exception as e:
@@ -35,7 +51,9 @@ async def _log_failure_context_async(page, prefix):
     try:
         logger.error(
             f"Login flow failed at url={page.url!r} title={await page.title()!r} "
-            f"content={(await page.content())[:2000]!r}"
+            f"body_text={(await page.inner_text('body'))[:4000]!r} "
+            f"console={(console_messages or [])[-20:]!r} "
+            f"failed_requests={(failed_requests or [])[-20:]!r}"
         )
     except Exception as e:
         logger.warning(f"Could not capture page content: {e}")
@@ -71,6 +89,7 @@ def sync_login():
         try:
             context = browser.new_context(ignore_https_errors=True)
             page = context.new_page()
+            console_messages, failed_requests = _attach_diagnostics(page)
             try:
                 page.goto(f'{GATEWAY_URL}/')
                 page.wait_for_selector('#xyz-field-username', state='visible', timeout=45000)
@@ -91,10 +110,10 @@ def sync_login():
                     page.wait_for_selector('text=Client login succeeds', timeout=5000)
                     return "Login Successful"
                 except Exception:
-                    _log_failure_context(page, 'Failed_Login')
+                    _log_failure_context(page, 'Failed_Login', console_messages, failed_requests)
                     return "Login Failed"
             except Exception:
-                _log_failure_context(page, 'Failed_Login')
+                _log_failure_context(page, 'Failed_Login', console_messages, failed_requests)
                 raise
         finally:
             browser.close()
@@ -110,6 +129,7 @@ async def async_login():
         try:
             context = await browser.new_context(ignore_https_errors=True)
             page = await context.new_page()
+            console_messages, failed_requests = _attach_diagnostics(page)
             try:
                 await page.goto(f'{GATEWAY_URL}/')
                 await page.wait_for_selector('#xyz-field-username', state='visible', timeout=45000)
@@ -125,10 +145,10 @@ async def async_login():
                     await page.wait_for_selector('text=Client login succeeds', timeout=5000)
                     return "Login Successful"
                 except Exception:
-                    await _log_failure_context_async(page, 'Failed_Login')
+                    await _log_failure_context_async(page, 'Failed_Login', console_messages, failed_requests)
                     return "Login Failed"
             except Exception:
-                await _log_failure_context_async(page, 'Failed_Login')
+                await _log_failure_context_async(page, 'Failed_Login', console_messages, failed_requests)
                 raise
         finally:
             await browser.close()
