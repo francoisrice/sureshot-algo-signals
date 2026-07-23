@@ -7,6 +7,8 @@ spec:
   schedule: "0 8 * * 1-5"    # 8:00am ET Mon-Fri
   timeZone: "America/New_York"
   concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 5
+  failedJobsHistoryLimit: 5
   jobTemplate:
     spec:
       backoffLimit: 0
@@ -14,7 +16,7 @@ spec:
         spec:
           nodeSelector:
             kubernetes.io/hostname: orchestrator
-          restartPolicy: OnFailure
+          restartPolicy: Never
           containers:
           - name: preauth
             image: sureshotcapital/multi-strategy-api:latest
@@ -22,10 +24,13 @@ spec:
             - python3
             - -c
             - |
-              import os, sys, requests
+              import os, sys, time, requests
               from SureshotSDK.ibkr.automation.client import RetryClient
 
-              def notify_failure(message):
+              MAX_ATTEMPTS = 5
+              RETRY_DELAY_SECONDS = 10
+
+              def _send_telegram(message):
                   token = os.environ.get("TELEGRAM_BOT_TOKEN")
                   chat_id = os.environ.get("TELEGRAM_CHAT_ID")
                   if not token or not chat_id:
@@ -39,12 +44,27 @@ spec:
                   except Exception:
                       pass
 
-              try:
-                  RetryClient()._ensure_authenticated()
-                  print("IBKR pre-auth OK")
-              except Exception as e:
-                  notify_failure(f"IBKR pre-auth FAILED: {e}")
-                  sys.exit(1)
+              def notify_success():
+                  _send_telegram("Ready to Trade \U0001F4B0")
+
+              def notify_failure(message):
+                  _send_telegram(message)
+
+              last_error = None
+              for attempt in range(1, MAX_ATTEMPTS + 1):
+                  try:
+                      RetryClient()._ensure_authenticated()
+                      print(f"IBKR pre-auth OK (attempt {attempt}/{MAX_ATTEMPTS})")
+                      notify_success()
+                      sys.exit(0)
+                  except Exception as e:
+                      last_error = e
+                      print(f"IBKR pre-auth attempt {attempt}/{MAX_ATTEMPTS} failed: {e}")
+                      if attempt < MAX_ATTEMPTS:
+                          time.sleep(RETRY_DELAY_SECONDS)
+
+              notify_failure(f"IBKR pre-auth FAILED after {MAX_ATTEMPTS} attempts: {last_error}")
+              sys.exit(1)
             resources:
               requests:
                 cpu: "100m"
