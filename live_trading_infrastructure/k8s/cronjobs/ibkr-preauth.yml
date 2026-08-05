@@ -4,7 +4,7 @@ metadata:
   name: ibkr-preauth
   namespace: trading
 spec:
-  schedule: "0 8 * * 1-5"    # 8:00am ET Mon-Fri
+  schedule: "0 5 * * 1-5"    # 5:00am ET Mon-Fri
   timeZone: "America/New_York"
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 5
@@ -24,11 +24,13 @@ spec:
             - python3
             - -c
             - |
-              import os, sys, time, requests
+              import os, sys, time, random, requests
               from SureshotSDK.ibkr.automation.client import RetryClient
 
-              MAX_ATTEMPTS = 5
-              RETRY_DELAY_SECONDS = 10
+              MAX_ATTEMPTS = 10
+              BASE_DELAY_SECONDS = 30
+              MAX_DELAY_SECONDS = 3600
+              ALERT_AFTER_ATTEMPT = 4  # start Telegram-alerting once we've failed this many times
 
               def _send_telegram(message):
                   token = os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -60,10 +62,14 @@ spec:
                   except Exception as e:
                       last_error = e
                       print(f"IBKR pre-auth attempt {attempt}/{MAX_ATTEMPTS} failed: {e}")
+                      if attempt >= ALERT_AFTER_ATTEMPT:
+                          notify_failure(f"IBKR pre-auth attempt {attempt}/{MAX_ATTEMPTS} failed: {e}")
                       if attempt < MAX_ATTEMPTS:
-                          time.sleep(RETRY_DELAY_SECONDS)
+                          delay = min(BASE_DELAY_SECONDS * (2 ** (attempt - 1)), MAX_DELAY_SECONDS)
+                          delay += random.uniform(0, delay * 0.1)  # jitter, avoids lock-step retries
+                          print(f"Retrying in {delay:.0f}s...")
+                          time.sleep(delay)
 
-              notify_failure(f"IBKR pre-auth FAILED after {MAX_ATTEMPTS} attempts: {last_error}")
               sys.exit(1)
             resources:
               requests:
