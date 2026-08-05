@@ -1,6 +1,6 @@
 # Bond Ladder and Interest rate strategy
 
-Strategy Name: SuperTank
+Strategy Name: Tourniquet
 
 When shorting Bonds (long interest rates) Strategy Name: SuperBunker
 
