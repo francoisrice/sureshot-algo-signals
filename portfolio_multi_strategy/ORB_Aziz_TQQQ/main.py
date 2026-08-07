@@ -93,6 +93,8 @@ class ORBAzizTQQQ(TradingStrategy):
         self.stop_loss_price = None
         self.position_direction = None  # 'LONG' or 'SHORT'
 
+        self.pending_close = False
+
         # Date tracking
         self.current_trading_date = None
         self.last_scan_date = None
@@ -157,6 +159,7 @@ class ORBAzizTQQQ(TradingStrategy):
 
         self.current_trading_date = date_obj
         self.completedTrade = False
+        self.pending_close = False
 
         # TODO: Fix if-condition to make scan dynamic
         # Check if should scan for new stock
@@ -284,16 +287,20 @@ class ORBAzizTQQQ(TradingStrategy):
                     if self.sell_all(self.tradingSymbol, price=price):
                         self.completedTrade = True
                         self.mark_trade_completed()
+                        self.pending_close = False
                     else:
                         logger.error(f"Take profit close failed for {self.tradingSymbol} — will retry next bar")
+                        self.pending_close = True
                     return
                 elif self.stop_loss_price is not None and price <= self.stop_loss_price:
                     logger.info(f"Stop loss hit for {self.tradingSymbol}: ${price:.2f} <= ${self.stop_loss_price:.2f}")
                     if self.sell_all(self.tradingSymbol, price=price):
                         self.completedTrade = True
                         self.mark_trade_completed()
+                        self.pending_close = False
                     else:
                         logger.error(f"Stop loss close failed for {self.tradingSymbol} — will retry next bar")
+                        self.pending_close = True
                     return
             if self.position_direction == 'SHORT':
                 if self.take_profit_price is not None and price <= self.take_profit_price:
@@ -301,16 +308,20 @@ class ORBAzizTQQQ(TradingStrategy):
                     if self.close_short_all(self.tradingSymbol, price=price):
                         self.completedTrade = True
                         self.mark_trade_completed()
+                        self.pending_close = False
                     else:
                         logger.error(f"Take profit close failed for {self.tradingSymbol} — will retry next bar")
+                        self.pending_close = True
                     return
                 elif self.stop_loss_price is not None and price >= self.stop_loss_price:
                     logger.info(f"Stop loss hit for {self.tradingSymbol}: ${price:.2f} >= ${self.stop_loss_price:.2f}")
                     if self.close_short_all(self.tradingSymbol, price=price):
                         self.completedTrade = True
                         self.mark_trade_completed()
+                        self.pending_close = False
                     else:
                         logger.error(f"Stop loss close failed for {self.tradingSymbol} — will retry next bar")
+                        self.pending_close = True
                     return
 
             # End of day exit
@@ -320,16 +331,27 @@ class ORBAzizTQQQ(TradingStrategy):
                     if self.sell_all(self.tradingSymbol, price=price):
                         self.completedTrade = True
                         self.mark_trade_completed()
+                        self.pending_close = False
                     else:
                         logger.error(f"EOD close failed for {self.tradingSymbol} — will retry next bar")
+                        self.pending_close = True
                 if self.position_direction == 'SHORT':
                     if self.close_short_all(self.tradingSymbol, price=price):
                         self.completedTrade = True
                         self.mark_trade_completed()
+                        self.pending_close = False
                     else:
                         logger.error(f"EOD close failed for {self.tradingSymbol} — will retry next bar")
+                        self.pending_close = True
                 return
         else:
+            if self.pending_close:
+                logger.warning(f"{self.tradingSymbol} shows flat after an earlier unconfirmed close — treating as completed, not re-entering")
+                self.pending_close = False
+                self.completedTrade = True
+                self.mark_trade_completed()
+                return
+
             # Entry logic: Long breakout
             if price > self.opening_range_open:
                 logger.info(f"Long: ${price:.2f} > ${self.opening_range_open:.2f}")
