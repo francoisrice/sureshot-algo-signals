@@ -6,7 +6,7 @@ import requests
 from typing import Callable, Any, Optional
 from datetime import datetime, timedelta
 from .Portfolio import Portfolio
-from .Polygon import PolygonClient
+from .HistoricalDataClient import HistoricalDataClient
 
 class TradingStrategy:
     def __init__(self, portfolio: Portfolio = None, strategy_name: str = None, api_url: str = None, timeframe: str = '1d'):
@@ -17,7 +17,7 @@ class TradingStrategy:
         self.portfolio = portfolio
         self.start_date = None
         self.end_date = None
-        self.polygon_client = PolygonClient() if os.getenv("POLYGON_API_KEY") else None
+        self.data_client = HistoricalDataClient() if (os.getenv("POLYGON_API_KEY") or os.getenv("LONDONSTRATEGICEDGE_API_KEY")) else None
         self._data_fetcher = None 
         self.logger = logging.getLogger(__name__)
         self.strategy_name = strategy_name or getattr(self, 'name', None)
@@ -154,11 +154,11 @@ class TradingStrategy:
         Returns:
             Current price of the stock or None if unavailable
         """
-        if self.polygon_client is None:
+        if self.data_client is None:
             bar = self.real_time_price_fetcher(symbol)
             return bar['c'] if bar else None
         try:
-            price = self.polygon_client.get_current_price(symbol)
+            price = self.data_client.get_current_price(symbol)
             if price is not None:
                 self.logger.info(f"Fetched price for {symbol}: ${price:.2f}")
                 return price
@@ -181,7 +181,7 @@ class TradingStrategy:
             Current price of the stock or None if unavailable
         """
         try:
-            price = self.polygon_client.get_historical_price(symbol, date, '1m')            
+            price = self.data_client.get_historical_price(symbol, date, '1m')            
             if price is not None:
                 self.logger.info(f"Fetched historical price for {symbol}: ${price:.2f}")
                 return price

@@ -10,7 +10,7 @@ from datetime import datetime, date, time, timedelta
 from typing import Dict, List, Optional
 from pathlib import Path
 import json
-from .Polygon import PolygonClient
+from .HistoricalDataClient import HistoricalDataClient
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ class IntradayDataManager:
         """
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(exist_ok=True)
-        self.polygon_client = PolygonClient()
+        self.data_client = HistoricalDataClient()
 
         # In-memory cache for current session
         # Format: {symbol: {date: List[bars]}}
@@ -132,11 +132,11 @@ class IntradayDataManager:
             end_dt = datetime.combine(trading_date, time(16, 0))
 
             # Fetch 1-minute bars
-            data = self.polygon_client.get_historical_data(
+            data = self.data_client.get_historical_data(
                 symbol,
                 start_dt,
                 end_dt,
-                timeframe='1min'
+                timeframe='1m'
             )
 
             return data if data else []

@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 import logging
 from typing import Optional
-from .Polygon import PolygonClient
+from .HistoricalDataClient import HistoricalDataClient
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -27,7 +27,7 @@ class EMA:
         self.ema_value = ema_value
         self.num_updates = 0
         self.is_initialized = False
-        self.polygon_client = PolygonClient()
+        self.data_client = HistoricalDataClient()
 
     def initialize(self, start_date: Optional[datetime] = None):
         """
@@ -45,7 +45,7 @@ class EMA:
                 end_date = start_date + timedelta(days=self.period * 2)
 
             # Fetch historical data using Polygon client
-            close_prices = self.polygon_client.get_close_prices(
+            close_prices = self.data_client.get_close_prices(
                 self.symbol, start_date, end_date, self.timeframe
             )
 
@@ -109,7 +109,7 @@ class EMA:
         Returns:
             Current price or None if unavailable
         """
-        return self.polygon_client.get_current_price(self.symbol)
+        return self.data_client.get_current_price(self.symbol)
 
     def __repr__(self) -> str:
         return f"EMA(symbol={self.symbol}, period={self.period}, value={self.ema_value})"

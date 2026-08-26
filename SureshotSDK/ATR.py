@@ -2,7 +2,7 @@ from collections import deque
 from datetime import datetime, timedelta
 import logging
 from typing import Optional, List, Dict
-from .Polygon import PolygonClient
+from .HistoricalDataClient import HistoricalDataClient
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -39,7 +39,7 @@ class ATR:
         self.atr_value = None
         self.previous_close = None
         self.is_initialized = False
-        self.polygon_client = PolygonClient()
+        self.data_client = HistoricalDataClient()
 
     def initialize(self, start_date: Optional[datetime] = None):
         """
@@ -57,7 +57,7 @@ class ATR:
                 end_date = start_date + timedelta(days=self.period * 2)
 
             # Fetch historical OHLC data using Polygon client
-            historical_data = self.polygon_client.get_historical_data(
+            historical_data = self.data_client.get_historical_data(
                 self.symbol, start_date, end_date, self.timeframe
             )
 

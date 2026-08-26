@@ -3,7 +3,7 @@ import os
 import requests
 from typing import Dict, Optional
 from datetime import datetime
-from .Polygon import PolygonClient
+from .HistoricalDataClient import HistoricalDataClient
 from .ibkr.automation.client import IBKRClient
 
 class Portfolio:
@@ -20,7 +20,7 @@ class Portfolio:
         self.positions = {}  # symbol -> shares
         self.positionValues = {}  # symbol -> current market value
         self.invested = False
-        self.polygon_client = PolygonClient()
+        self.data_client = HistoricalDataClient()
         self.ibkr_client = IBKRClient()
         self.logger = logging.getLogger(__name__)
         self.strategy_name = strategy_name
@@ -207,7 +207,7 @@ class Portfolio:
             Current price or None if unavailable
         """
         try:
-            return self.polygon_client.get_current_price(symbol)
+            return self.data_client.get_current_price(symbol)
         except Exception as e:
             self.logger.error(f"Error fetching current price for {symbol}: {e}")
             return None

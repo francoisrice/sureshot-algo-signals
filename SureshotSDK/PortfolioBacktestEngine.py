@@ -18,7 +18,7 @@ from pathlib import Path
 from collections import defaultdict
 
 from .Portfolio import Portfolio
-from .Polygon import PolygonClient
+from .HistoricalDataClient import HistoricalDataClient
 from .BacktestingPriceCache import BacktestingPriceCache
 from .IntradayDataManager import IntradayDataManager
 from .BacktestEngine import Trade
@@ -67,7 +67,7 @@ class PortfolioBacktestEngine:
         # Data managers
         self.price_cache = BacktestingPriceCache(cache_dir) if use_cache else None
         self.intraday_manager = IntradayDataManager()
-        self.polygon_client = PolygonClient()
+        self.data_client = HistoricalDataClient(price_cache=self.price_cache, cache_dir=cache_dir)
 
         # Shared portfolio
         self.portfolio = Portfolio(cash=initial_cash)
@@ -670,7 +670,7 @@ class PortfolioBacktestEngine:
             if cached_data:
                 return cached_data
 
-        data = self.polygon_client.get_historical_data(symbol, start_date, end_date, timeframe)
+        data = self.data_client.get_historical_data(symbol, start_date, end_date, timeframe)
 
         if self.use_cache and self.price_cache and data:
             self.price_cache.set(symbol, start_date, end_date, timeframe, data)

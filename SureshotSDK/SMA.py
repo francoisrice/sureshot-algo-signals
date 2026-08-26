@@ -2,7 +2,7 @@ from collections import deque
 from datetime import datetime, timedelta
 import logging
 from typing import Optional, Union
-from .Polygon import PolygonClient
+from .HistoricalDataClient import HistoricalDataClient
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -23,7 +23,7 @@ class SMA:
         self.prices = deque(maxlen=period)
         self.sma_value = sma_value
         self.is_initialized = False
-        self.polygon_client = PolygonClient()
+        self.data_client = HistoricalDataClient()
 
     def initialize(self, start_date: Optional[datetime] = None):
         """
@@ -41,7 +41,7 @@ class SMA:
                 end_date = start_date + timedelta(days=self.period * 2)
 
             # Fetch historical data using Polygon client
-            close_prices = self.polygon_client.get_close_prices(
+            close_prices = self.data_client.get_close_prices(
                 self.symbol, start_date, end_date, self.timeframe
             )
 
@@ -112,4 +112,4 @@ class SMA:
         Returns:
             Current price or None if unavailable
         """
-        return self.polygon_client.get_current_price(self.symbol)
+        return self.data_client.get_current_price(self.symbol)

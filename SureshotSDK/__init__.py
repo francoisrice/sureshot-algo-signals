@@ -7,6 +7,8 @@ from .BollingerBand import BollingerBand
 from .Portfolio import Portfolio
 from .utils import get_system_time, format_price, is_market_open
 from .Polygon import PolygonClient
+from .LondonStrategicEdge import LondonStrategicEdgeClient
+from .HistoricalDataClient import HistoricalDataClient
 from .ibkr.automation import IBKRClient
 from .BacktestEngine import BacktestEngine, Trade
 from .BacktestRunner import BacktestRunner
@@ -18,7 +20,8 @@ try:
     __all__ = [
         'TradingStrategy', 'ATR', 'SMA', 'EMA', 'BollingerBand', 'Portfolio',
         'get_system_time', 'format_price', 'is_market_open',
-        'PolygonClient', 'VaultClient', 'DataFetcherClient',
+        'PolygonClient', 'LondonStrategicEdgeClient', 'HistoricalDataClient',
+        'VaultClient', 'DataFetcherClient',
         'get_secret_from_vault', 'get_polygon_api_key_from_vault', 'IBKRClient',
         'BacktestEngine', 'BacktestRunner', 'BacktestingPriceCache', 'Trade'
     ]
@@ -26,6 +29,7 @@ except ImportError:
     __all__ = [
         'TradingStrategy', 'ATR', 'SMA', 'EMA', 'BollingerBand', 'Portfolio',
         'get_system_time', 'format_price', 'is_market_open',
-        'PolygonClient', 'DataFetcherClient', 'IBKRClient',
+        'PolygonClient', 'LondonStrategicEdgeClient', 'HistoricalDataClient',
+        'DataFetcherClient', 'IBKRClient',
         'BacktestEngine', 'BacktestRunner', 'BacktestingPriceCache', 'Trade'
     ]

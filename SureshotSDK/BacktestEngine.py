@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 from pathlib import Path
 from .Portfolio import Portfolio
-from .Polygon import PolygonClient
+from .HistoricalDataClient import HistoricalDataClient
 from .BacktestingPriceCache import BacktestingPriceCache
 
 logger = logging.getLogger(__name__)
@@ -50,9 +50,9 @@ class BacktestEngine:
         self.strategy_name = strategy_name
         self.initial_cash = initial_cash
         self.portfolio = Portfolio(cash=initial_cash)
-        self.polygon_client = PolygonClient()
         self.use_cache = use_cache
         self.price_cache = BacktestingPriceCache(cache_dir) if use_cache else None
+        self.data_client = HistoricalDataClient(price_cache=self.price_cache, cache_dir=cache_dir)
 
         # Backtest state
         self.start_date = None
@@ -67,9 +67,9 @@ class BacktestEngine:
         logger.info(f"BacktestEngine initialized for '{strategy_name}' with ${initial_cash:,.2f}")
 
     def _fetch_from_api(self, symbol: str, start_date: datetime, end_date: datetime, timeframe: str) -> List[Dict]:
-        """Fetch price data from Polygon API (used as callback for cache)"""
+        """Fetch price data from the API fallback chain (used as callback for cache)"""
         logger.info(f"Fetching {symbol} data from {start_date.date()} to {end_date.date()}")
-        return self.polygon_client.get_historical_data(symbol, start_date, end_date, timeframe)
+        return self.data_client.get_historical_data(symbol, start_date, end_date, timeframe)
 
     def get_historical_data(
         self,

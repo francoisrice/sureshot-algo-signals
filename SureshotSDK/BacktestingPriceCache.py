@@ -119,7 +119,10 @@ class BacktestingPriceCache:
             return dt.replace(tzinfo=None)
         ts = bar.get('t', 0)
         if ts:
-            return datetime.utcfromtimestamp(ts / 1000)
+            # Local time, matching how engines decode 't' everywhere else;
+            # utcfromtimestamp shifted midnight-ET daily bars past a midnight
+            # end_date and dropped the final day's bar on cache reads
+            return datetime.fromtimestamp(ts / 1000)
         return datetime.min
 
     def _filter_bars_by_date(self, bars: List[Dict], start_date: datetime, end_date: datetime) -> List[Dict]:
