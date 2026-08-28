@@ -762,12 +762,15 @@ async def close_short_all(trade: TradeRequest, db: Session = Depends(get_db)):
         )
         db.add(order)
 
-        # Update portfolio state
-        position_cost = abs(position.avg_price * position.quantity)
-        portfolio.collateral += total_proceeds
-        portfolio.cash = portfolio.collateral
+        # Release the collateral held at short entry plus the realized P&L.
+        # Incremental so cash flows from other trades since entry are preserved
+        # (assigning the collateral snapshot back would erase them).
+        entryValue = abs(position.avg_price * position.quantity)
+        buybackCost = abs(position.quantity) * trade.price
+        portfolio.cash += entryValue + (entryValue - buybackCost)
+        portfolio.collateral = 0
         portfolio.total_value = portfolio.cash
-        _update_portfolio_returns(portfolio, position_cost=position_cost)
+        _update_portfolio_returns(portfolio, position_cost=entryValue)
 
         # Check if still invested in any positions (before deleting current position)
         remaining_positions = db.query(Position).filter(
