@@ -39,7 +39,7 @@ spec:
               value: "https://ib-gateway-service:5000"
             # Comma-separated strategy names — must match each strategy's STRATEGY_NAME constant
             - name: PORTFOLIO_STRATEGIES
-              value: "ORB_Aziz_TQQQ"
+              value: "ORB_Aziz_TQQQ,SiegeEngine"
             - name: IBKR_USERNAME
               valueFrom:
                 secretKeyRef:
@@ -113,7 +113,25 @@ spec:
               memory: "256Mi"
           env:
             - name: TRADING_MODE
-              value: "LIVE"
+              value: "PAPER"
+            - name: API_URL
+              value: "http://localhost:8000"
+            - name: DATA_FETCHER_URL
+              value: "http://localhost:3100"
+
+        # SiegeEngine volatility-decay harvester — idles all day, runs one P&L check at 3:50pm ET
+        - name: siege-engine
+          image: sureshotcapital/siege-engine:latest
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+          env:
+            - name: TRADING_MODE
+              value: "PAPER"
             - name: API_URL
               value: "http://localhost:8000"
             - name: DATA_FETCHER_URL

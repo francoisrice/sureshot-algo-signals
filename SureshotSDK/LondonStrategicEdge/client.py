@@ -219,6 +219,9 @@ class LondonStrategicEdgeClient:
 
         except requests.RequestException as e:
             logger.error(f"Error fetching historical data from London Strategic Edge: {e}")
+            # Discard partial pages so the caller falls over to the next provider
+            # instead of caching an incomplete range as complete
+            return []
 
         dedupedBars = {bar['t']: bar for bar in bars}
         return [dedupedBars[t] for t in sorted(dedupedBars)]

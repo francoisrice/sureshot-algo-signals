@@ -235,7 +235,7 @@ class TradingStrategy:
         if self.trading_mode == "LIVE" or self.trading_mode == "PAPER":
             current_price = self.price_fetcher(symbol) or price
         else:
-            current_price = self.historical_price_fetcher(symbol, self.current_date)
+            current_price = self.historical_price_fetcher(symbol, self.current_date) or price
 
         if not current_price:
             self.logger.error(f"Cannot buy {symbol}: no price available")
@@ -284,7 +284,7 @@ class TradingStrategy:
         if self.trading_mode == "LIVE" or self.trading_mode == "PAPER":
             current_price = self.price_fetcher(symbol) or price
         else:
-            current_price = self.historical_price_fetcher(symbol, self.current_date)
+            current_price = self.historical_price_fetcher(symbol, self.current_date) or price
 
         if not current_price:
             self.logger.error(f"Cannot sell {symbol}: no price available")
@@ -333,7 +333,7 @@ class TradingStrategy:
         if self.trading_mode == "LIVE" or self.trading_mode == "PAPER":
             current_price = self.price_fetcher(symbol) or price
         else:
-            current_price = self.historical_price_fetcher(symbol, self.current_date)
+            current_price = self.historical_price_fetcher(symbol, self.current_date) or price
 
         if not current_price:
             self.logger.error(f"Cannot sell short {symbol}: no price available")
@@ -382,7 +382,7 @@ class TradingStrategy:
         if self.trading_mode == "LIVE" or self.trading_mode == "PAPER":
             current_price = self.price_fetcher(symbol) or price
         else:
-            current_price = self.historical_price_fetcher(symbol, self.current_date)
+            current_price = self.historical_price_fetcher(symbol, self.current_date) or price
 
         if not current_price:
             self.logger.error(f"Cannot close short {symbol}: no price available")

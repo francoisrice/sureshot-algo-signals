@@ -233,8 +233,9 @@ class BacktestingPriceCache:
 
         # Save updated cache if extended
         if cache_updated:
-            # Remove old cache file
-            cache_path.unlink()
+            # Remove old cache file — may already be gone if a nested get() through
+            # fetch_fn extended the same range on the shared cache instance
+            cache_path.unlink(missing_ok=True)
             # Save new consolidated cache and update index
             self._save_cache_file(symbol, timeframe, new_start_str, new_end_str, result_bars)
             new_path = self.cache_dir / f"{symbol}_{timeframe}_{new_start_str}_{new_end_str}.json"

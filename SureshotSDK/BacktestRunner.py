@@ -124,14 +124,22 @@ class BacktestRunner:
         return self.engine.results
     
     def _process_daily_data(self, data: List[Dict]):
+        valuationSeries = self._fetch_valuation_series()
+
         # Process each bar
         for i, candle in enumerate(data):
             # Get current date and price
             current_date = datetime.fromtimestamp(candle['t'] / 1000)
             current_price = candle['c']
 
-            # Record current equity
-            self.engine.record_equity(current_date, {self.strategy.positionSymbol: current_price}, self.strategy.api_url)
+            # Record current equity, valuing any extra symbols the strategy holds
+            symbolPrices = {self.strategy.positionSymbol: current_price}
+            for symbol, closesByDate in (valuationSeries or {}).items():
+                close = closesByDate.get(current_date.date())
+                if close is not None:
+                    symbolPrices[symbol] = close
+
+            self.engine.record_equity(current_date, symbolPrices, self.strategy.api_url)
 
             # Call strategy's on_data method with current price and date
             try:
@@ -139,6 +147,16 @@ class BacktestRunner:
             except Exception as e:
                 logger.error(f"Error in strategy.on_data() on {current_date.date()}: {e}")
                 continue
+
+    def _fetch_valuation_series(self) -> Dict[str, Dict]:
+        """Daily closes for strategy.valuationSymbols so multi-leg positions are valued in the equity curve"""
+        series = {}
+        for symbol in getattr(self.strategy, 'valuationSymbols', None) or []:
+            bars = self.engine.get_historical_data(symbol, self.start_date, self.end_date, '1d')
+            series[symbol] = {
+                datetime.fromtimestamp(bar['t'] / 1000).date(): bar['c'] for bar in bars or []
+            }
+        return series
 
     def _process_intraday_data(self, data: List[Dict]):
         for i, candle in enumerate(data):
