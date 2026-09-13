@@ -208,12 +208,12 @@ class BacktestingPriceCache:
         # Check if we need to extend backwards
         if start_date < cache_start:
             if fetch_fn:
-                # logger.info(f"Extending cache backwards: {req_start_str} to {cache_start_str}")
                 logger.debug(f"Extending cache backwards: {req_start_str} to {cache_start_str}")
                 pre_bars = fetch_fn(symbol, start_date, cache_start, timeframe)
-                if pre_bars:
+                earliestFetched = min((self._get_bar_date(b) for b in pre_bars), default=None) if pre_bars else None
+                if earliestFetched is not None and earliestFetched < cache_start:
                     result_bars = self._merge_bars(pre_bars, result_bars)
-                    new_start_str = req_start_str
+                    new_start_str = self._date_to_str(earliestFetched)
                     cache_updated = True
             else:
                 logger.warning(f"Requested start {req_start_str} before cache start {cache_start_str}, no fetch_fn provided")
@@ -221,12 +221,12 @@ class BacktestingPriceCache:
         # Check if we need to extend forwards
         if end_date > cache_end:
             if fetch_fn:
-                # logger.info(f"Extending cache forwards: {cache_end_str} to {req_end_str}")
                 logger.debug(f"Extending cache forwards: {cache_end_str} to {req_end_str}")
                 post_bars = fetch_fn(symbol, cache_end, end_date, timeframe)
-                if post_bars:
+                latestFetched = max((self._get_bar_date(b) for b in post_bars), default=None) if post_bars else None
+                if latestFetched is not None and latestFetched > cache_end:
                     result_bars = self._merge_bars(result_bars, post_bars)
-                    new_end_str = req_end_str
+                    new_end_str = self._date_to_str(latestFetched)
                     cache_updated = True
             else:
                 logger.warning(f"Requested end {req_end_str} after cache end {cache_end_str}, no fetch_fn provided")
