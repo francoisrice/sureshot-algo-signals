@@ -171,6 +171,10 @@ class SiegeEngine(TradingStrategy):
     def fetch_leveraged_price(self, currentDatetime: datetime) -> Optional[float]:
         if self.trading_mode in ("LIVE", "PAPER"):
             return self.price_fetcher(self.leveragedSymbol)
+        if not self.leveragedPriceHistory and self.start_date:
+            # Init-time load can fail on provider rate limits — retry the cheap
+            # daily-range fetch instead of falling into per-day minute lookups
+            self.leveragedPriceHistory = self._load_daily_closes(self.leveragedSymbol, self.start_date, self.end_date)
         return (
             self.leveragedPriceHistory.get(currentDatetime.date())
             or self.historical_price_fetcher(self.leveragedSymbol, currentDatetime)
