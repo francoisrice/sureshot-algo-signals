@@ -536,7 +536,7 @@ async def sell_short_all(trade: TradeRequest, db: Session = Depends(get_db)):
         if position:
             # Add to existing short position
             total_shares = position.quantity - shares_to_buy
-            total_cost_basis = (position.quantity * position.avg_price) + total_cost
+            total_cost_basis = (position.quantity * position.avg_price) - total_cost
             position.avg_price = total_cost_basis / total_shares
             position.quantity = total_shares
             position.current_price = trade.price
@@ -617,7 +617,8 @@ async def sell_all(trade: TradeRequest, db: Session = Depends(get_db)):
                 detail=f"No position found for {trade.symbol} in strategy {trade.strategy_name}"
             )
 
-        shares_to_sell = position.quantity
+        shares_to_sell = min(trade.quantity, position.quantity) if trade.quantity else position.quantity
+        remainingShares = position.quantity - shares_to_sell
         total_proceeds = shares_to_sell * trade.price
 
         # Determine trading mode and execute trade
@@ -656,22 +657,26 @@ async def sell_all(trade: TradeRequest, db: Session = Depends(get_db)):
         db.add(order)
 
         # Update portfolio state — always clean up position regardless of IBKR outcome
-        position_cost = position.avg_price * position.quantity
+        position_cost = position.avg_price * shares_to_sell
         if trade_result["status"] != "FAILED":
             portfolio.cash += total_proceeds
         portfolio.total_value = portfolio.cash
         _update_portfolio_returns(portfolio, position_cost=position_cost)
 
-        # Check if still invested in any positions (before deleting current position)
-        remaining_positions = db.query(Position).filter(
-            Position.strategy_name == trade.strategy_name,
-            Position.id != position.id
-        ).count()
-        portfolio.invested = remaining_positions > 0
-        portfolio.position_locked = remaining_positions > 0  # Unlock when all positions closed
-
-        # Remove position
-        db.delete(position)
+        if remainingShares > 0:
+            position.quantity = remainingShares
+            position.current_price = trade.price
+            position.market_value = remainingShares * trade.price
+            portfolio.total_value += position.market_value
+        else:
+            # Check if still invested in any positions (before deleting current position)
+            remaining_positions = db.query(Position).filter(
+                Position.strategy_name == trade.strategy_name,
+                Position.id != position.id
+            ).count()
+            portfolio.invested = remaining_positions > 0
+            portfolio.position_locked = remaining_positions > 0  # Unlock when all positions closed
+            db.delete(position)
 
         db.commit()
         db.refresh(order)
@@ -734,7 +739,8 @@ async def close_short_all(trade: TradeRequest, db: Session = Depends(get_db)):
                 detail=f"No position found for {trade.symbol} in strategy {trade.strategy_name}"
             )
 
-        shares_to_sell = position.quantity
+        shares_to_sell = -min(trade.quantity, abs(position.quantity)) if trade.quantity else position.quantity
+        remainingShares = position.quantity - shares_to_sell
         total_proceeds = shares_to_sell * trade.price
 
         # Determine trading mode and execute trade
@@ -765,23 +771,27 @@ async def close_short_all(trade: TradeRequest, db: Session = Depends(get_db)):
         # Release the collateral held at short entry plus the realized P&L.
         # Incremental so cash flows from other trades since entry are preserved
         # (assigning the collateral snapshot back would erase them).
-        entryValue = abs(position.avg_price * position.quantity)
-        buybackCost = abs(position.quantity) * trade.price
+        entryValue = abs(position.avg_price * shares_to_sell)
+        buybackCost = abs(shares_to_sell) * trade.price
         portfolio.cash += entryValue + (entryValue - buybackCost)
-        portfolio.collateral = 0
         portfolio.total_value = portfolio.cash
         _update_portfolio_returns(portfolio, position_cost=entryValue)
 
-        # Check if still invested in any positions (before deleting current position)
-        remaining_positions = db.query(Position).filter(
-            Position.strategy_name == trade.strategy_name,
-            Position.id != position.id
-        ).count()
-        portfolio.invested = remaining_positions > 0
-        portfolio.position_locked = remaining_positions > 0  # Unlock when all positions closed
-
-        # Remove position
-        db.delete(position)
+        if remainingShares < 0:
+            position.quantity = remainingShares
+            position.current_price = trade.price
+            position.market_value = remainingShares * trade.price
+            portfolio.total_value += position.market_value
+        else:
+            portfolio.collateral = 0
+            # Check if still invested in any positions (before deleting current position)
+            remaining_positions = db.query(Position).filter(
+                Position.strategy_name == trade.strategy_name,
+                Position.id != position.id
+            ).count()
+            portfolio.invested = remaining_positions > 0
+            portfolio.position_locked = remaining_positions > 0  # Unlock when all positions closed
+            db.delete(position)
 
         db.commit()
         db.refresh(order)

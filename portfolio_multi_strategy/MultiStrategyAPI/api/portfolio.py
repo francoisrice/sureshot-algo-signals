@@ -112,6 +112,9 @@ async def initialize_portfolios(
         # Create or update portfolio states
         created_portfolios = []
         for strategy_name, allocated_capital in allocations.items():
+            # Clean up old positions for initialized strategy
+            db.query(Position).filter(Position.strategy_name == strategy_name).delete(synchronize_session=False)
+
             # Check if portfolio already exists
             portfolio = db.query(PortfolioState).filter(
                 PortfolioState.strategy_name == strategy_name
@@ -123,6 +126,11 @@ async def initialize_portfolios(
                 portfolio.cash = allocated_capital
                 portfolio.initial_cash = allocated_capital
                 portfolio.total_value = allocated_capital
+                portfolio.invested = False
+                portfolio.position_locked = False
+                portfolio.completed_trade_date = None
+                portfolio.total_return = 0.0
+                portfolio.total_return_pct = 0.0
                 portfolio.last_updated = datetime.utcnow()
                 logger.info(f"Updated portfolio for {strategy_name}: ${allocated_capital:,.2f}")
             else:

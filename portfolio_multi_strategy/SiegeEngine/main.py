@@ -60,14 +60,27 @@ class SiegeEngine(TradingStrategy):
     positionSymbol = LONG_SYMBOL
     valuationSymbols = [LEVERAGED_SYMBOL]  # BacktestRunner values these in the equity curve too
 
-    def __init__(self, stop_loss=OPTIMIZATION_STOP_LOSS_PERCENT):
-        super().__init__(portfolio=None, strategy_name=self.name, api_url=API_URL)
+    def __init__(
+        self,
+        stop_loss: float = OPTIMIZATION_STOP_LOSS_PERCENT,
+        long_symbol: str = LONG_SYMBOL,
+        leveraged_symbol: str = LEVERAGED_SYMBOL,
+        leverage_factor: float = LEVERAGE_ETF_FACTOR,
+        timeframe: str = TIMEFRAME,
+        strategy_name: str = STRATEGY_NAME,
+        api_url: str = API_URL
+    ):
+        self.name = strategy_name
+        self.positionSymbol = long_symbol
+        self.valuationSymbols = [leveraged_symbol]
+        super().__init__(portfolio=None, strategy_name=self.name, api_url=api_url)
         self.trading_mode = TRADING_MODE
 
-        self.tradingSymbol = LONG_SYMBOL
-        self.leveragedSymbol = LEVERAGED_SYMBOL
-        self.timeframe = TIMEFRAME
+        self.tradingSymbol = long_symbol
+        self.leveragedSymbol = leveraged_symbol
+        self.timeframe = timeframe
         self.stopLossPercent = stop_loss
+        self.leverageFactor = leverage_factor
 
         self._reset_position_state()
         self.exitedPermanently = False
@@ -120,6 +133,7 @@ class SiegeEngine(TradingStrategy):
 
     def backtest_initialize(self, start_date, end_date):
         """Initialize for BACKTEST mode"""
+        self.trading_mode = "BACKTEST"
         self.set_start_date(start_date)
         self.set_end_date(end_date)
 
@@ -175,20 +189,23 @@ class SiegeEngine(TradingStrategy):
             # Init-time load can fail on provider rate limits — retry the cheap
             # daily-range fetch instead of falling into per-day minute lookups
             self.leveragedPriceHistory = self._load_daily_closes(self.leveragedSymbol, self.start_date, self.end_date)
-        return (
-            self.leveragedPriceHistory.get(currentDatetime.date())
-            or self.historical_price_fetcher(self.leveragedSymbol, currentDatetime)
-        )
+        price = self.leveragedPriceHistory.get(currentDatetime.date())
+        if price is not None:
+            return price
+        sortedDates = [d for d in self.leveragedPriceHistory if d <= currentDatetime.date()]
+        if sortedDates:
+            return self.leveragedPriceHistory[max(sortedDates)]
+        return self.historical_price_fetcher(self.leveragedSymbol, currentDatetime)
 
     def calculate_position_size(self, price: float, leveragedPrice: float) -> dict:
-        """Split capital so long market value = LEVERAGE_ETF_FACTOR x short market value"""
         cash = self.fetch_portfolio_cash()
         if not cash or cash <= 0:
             return {"long": 0, "short": 0}
 
-        shortCapital = cash / (LEVERAGE_ETF_FACTOR + 1)
+        factor = getattr(self, 'leverageFactor', LEVERAGE_ETF_FACTOR)
+        shortCapital = cash / (factor + 1)
         shortShares = int(shortCapital // leveragedPrice)
-        longShares = int((shortShares * leveragedPrice * LEVERAGE_ETF_FACTOR) // price)
+        longShares = int((shortShares * leveragedPrice * factor) // price)
 
         return {"long": longShares, "short": shortShares}
 
