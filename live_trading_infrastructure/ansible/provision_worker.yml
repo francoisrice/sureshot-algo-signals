@@ -1,11 +1,12 @@
 ---
-# Provisions the ephemeral Vultr VX1 worker node, waits for it to join
-# the MicroK8s cluster, then labels it so the trading-app pod can schedule.
+# Provisions the ephemeral trading-app worker: walks provider_attempts in order
+# and stops at the first that yields a Ready node, so a provider outage or a
+# boot-wedge fails over instead of losing the trading day. See README.md.
 #
-# Run by orchestrator system cron at 9:00am ET Mon-Fri.
+# Run by orchestrator system cron at 8:30am ET Mon-Fri (see orchestrator.yml).
 # Requires env vars: VULTR_API_KEY, VULTR_SSH_KEY_ID
 
-- name: Provision VX1 worker node
+- name: Provision worker node
   hosts: localhost
   connection: local
   become: yes
@@ -13,141 +14,83 @@
     vultr_api_key: "{{ lookup('env', 'VULTR_API_KEY') }}"
     ssh_key_id: "{{ lookup('env', 'VULTR_SSH_KEY_ID') }}"
     worker_plan: "vx1-g-2c-8g-120s"
-    worker_region: "ewr"
-    worker_fallback_region: "atl"
     worker_os_id: 2284
+    join_token_ttl: 1800            # 30 min; regenerated per attempt
+    node_ready_timeout: 720         # 12 min per attempt to reach Ready
+
+    instances_file: /opt/trading/secrets/worker_instances
+
+    # Ordered attempts; first Ready node wins. Second cloud goes LAST — see
+    # README "Adding a second cloud".
+    provider_attempts:
+      - { provider: vultr, region: ewr }
+      - { provider: vultr, region: atl }
 
   tasks:
-    - name: Generate MicroK8s join token (1 hour TTL)
-      command: microk8s add-node --token-ttl 3600 --format short
-      register: join_output
-
-    - name: Extract worker join command and orchestrator IP
-      set_fact:
-        join_cmd: "{{ join_output.stdout_lines | select('match', '.*microk8s join.*') | reject('match', '.*--worker.*') | first }}"
-        orchestrator_ip: "{{ (join_output.stdout_lines | select('match', '.*microk8s join.*') | reject('match', '.*--worker.*') | first).split('join ')[1].split(':')[0] }}"
-
-    - name: Read SSH public key
+    - name: Read SSH public key (injected into each worker via user_data)
       command: cat /root/.ssh/authorized_keys
       register: ssh_pubkey
       ignore_errors: yes
 
-    - name: Write user_data script to temp file
-      copy:
-        content: |
-          #!/bin/bash
-          set -e
-          # Explicitly inject SSH key in case Vultr metadata injection is skipped
-          mkdir -p /root/.ssh
-          chmod 700 /root/.ssh
-          echo "{{ ssh_pubkey.stdout_lines[0] | default('') }}" >> /root/.ssh/authorized_keys
-          chmod 600 /root/.ssh/authorized_keys
-          apt-get update -y
-          apt-get install -y snapd python3 python3-pip docker.io ufw
-          # Open ports required for K8s kubelet and Calico CNI
-          ufw allow 22/tcp
-          ufw allow 10250/tcp
-          ufw allow 10255/tcp
-          ufw allow 179/tcp
-          ufw allow 4789/udp
-          ufw --force enable
-          # NAT pod CIDR (10.1.0.0/16) so pods can reach the internet.
-          # Calico manages pod routing but does not add a MASQUERADE rule when UFW is active —
-          # without this, outbound pod connections time out silently.
-          iptables -t nat -A POSTROUTING -s 10.1.0.0/16 ! -d 10.0.0.0/8 -j MASQUERADE
-          # Persist across reboots and UFW reloads by inserting into the *nat section of before.rules
-          sed -i '/^\*nat/a -A POSTROUTING -s 10.1.0.0\/16 ! -d 10.0.0.0\/8 -j MASQUERADE' /etc/ufw/before.rules
-          snap install microk8s --classic --channel=1.31/stable
-          microk8s status --wait-ready --timeout=300
-          {{ join_cmd }} --worker
-          # MicroK8s join writes 127.0.0.1 in kubelet.config; patch it to the real orchestrator IP
-          sed -i 's|server: https://127.0.0.1:16443|server: https://{{ orchestrator_ip }}:16443|g' \
-              /var/snap/microk8s/current/credentials/kubelet.config
-          systemctl restart snap.microk8s.daemon-kubelite
-        dest: /tmp/worker_userdata.sh
-        mode: '0600'
-
-    - name: Base64 encode user_data (single line, no wrapping)
-      command: base64 -w 0 /tmp/worker_userdata.sh
-      register: userdata_b64
-
-    - name: Provision VX1 worker via Vultr API (primary region)
-      uri:
-        url: "https://api.vultr.com/v2/instances"
-        method: POST
-        headers:
-          Authorization: "Bearer {{ vultr_api_key }}"
-          Content-Type: "application/json"
-        body_format: json
-        body:
-          label: "trading-worker"
-          plan: "{{ worker_plan }}"
-          region: "{{ worker_region }}"
-          os_id: "{{ worker_os_id }}"
-          hostname: "trading-worker"
-          ssh_key_ids: ["{{ ssh_key_id }}"]
-          backups: "disabled"
-          user_data: "{{ userdata_b64.stdout }}"
-        status_code: [202, 400]
-      register: worker_response_primary
-      until: worker_response_primary.status == 202
-      retries: 2
-      delay: 20
-      failed_when: false
-      # Transient Vultr capacity errors (e.g. "plan is not available in the
-      # selected region") often clear within a minute or two — retry the
-      # primary region a couple of times before giving up on it entirely.
-
-    - name: Log primary-region failure and region fallback
-      lineinfile:
-        path: /var/log/trading/provision_worker.log
-        line: "{{ lookup('pipe', 'date -Is') }} [provision] primary region {{ worker_region }} failed after retries ({{ worker_response_primary.json.error | default('unknown error') }}); falling back to {{ worker_fallback_region }}"
-        create: yes
-      when: worker_response_primary.status != 202
-
-    - name: Provision VX1 worker via Vultr API (fallback region)
-      uri:
-        url: "https://api.vultr.com/v2/instances"
-        method: POST
-        headers:
-          Authorization: "Bearer {{ vultr_api_key }}"
-          Content-Type: "application/json"
-        body_format: json
-        body:
-          label: "trading-worker"
-          plan: "{{ worker_plan }}"
-          region: "{{ worker_fallback_region }}"
-          os_id: "{{ worker_os_id }}"
-          hostname: "trading-worker"
-          ssh_key_ids: ["{{ ssh_key_id }}"]
-          backups: "disabled"
-          user_data: "{{ userdata_b64.stdout }}"
-        status_code: 202
-      register: worker_response_fallback
-      when: worker_response_primary.status != 202
-      # Only reached if the primary region is still failing after retries above —
-      # never runs when the primary region already succeeded, so we can't end up
-      # accidentally provisioning two worker instances.
-
-    - name: Record which region actually provisioned the worker
+    - name: Initialise attempt state
       set_fact:
-        worker_response: "{{ worker_response_fallback if (worker_response_primary.status != 202) else worker_response_primary }}"
-        worker_actual_region: "{{ worker_fallback_region if (worker_response_primary.status != 202) else worker_region }}"
+        worker_ready: false
+        provider_api_down: false
 
-    - name: Save worker instance ID for deprovisioning
-      copy:
-        content: "{{ worker_response.json.instance.id }}"
-        dest: /opt/trading/secrets/worker_instance_id
-        mode: '0600'
+    - name: Run provisioning attempts in order until one node is Ready
+      include_tasks: provision_attempt.yml
+      loop: "{{ provider_attempts }}"
+      loop_control:
+        loop_var: attempt
+        label: "{{ attempt.provider }}/{{ attempt.region }}"
+      when: not worker_ready
 
-    - name: Wait for trading-worker node to appear in cluster
-      shell: |
-        start=$(date +%s)
-        until microk8s kubectl get node trading-worker; do
-          elapsed=$(( $(date +%s) - start ))
-          echo "$(date -Is) [wait-for-node] still waiting for trading-worker to join (${elapsed}s elapsed)" >> /var/log/trading/provision_worker.log
-          sleep 20
-        done
-
+    # --- Success path -----------------------------------------------------
     - name: Label worker node for trading-app scheduling
       command: microk8s kubectl label node trading-worker trading-node=worker --overwrite
+      when: worker_ready
+
+    - name: Log success
+      lineinfile:
+        path: /var/log/trading/provision_worker.log
+        line: "{{ lookup('pipe', 'date -Is') }} [provision] SUCCESS worker Ready+labeled via {{ worker_actual_provider }}/{{ worker_actual_region }}"
+        create: yes
+      when: worker_ready
+
+    # --- Telemetry (receipt, not a page); best-effort, never fatal ---------
+    - name: Read Telegram credentials for notification
+      shell: |
+        microk8s kubectl get secret telegram-credentials -n trading -o jsonpath='{.data.bot_token}' | base64 -d
+        echo
+        microk8s kubectl get secret telegram-credentials -n trading -o jsonpath='{.data.chat_id}' | base64 -d
+      register: tg_creds
+      ignore_errors: yes
+      no_log: true
+
+    - name: Notify — failover succeeded on a non-primary attempt
+      shell: >
+        curl -s --max-time 10 -X POST
+        "https://api.telegram.org/bot{{ (tg_creds.stdout_lines[0] | default('')) }}/sendMessage"
+        -d chat_id="{{ (tg_creds.stdout_lines[1] | default('')) }}"
+        -d text="✅ trading-worker provisioned via FAILOVER: {{ worker_actual_provider }}/{{ worker_actual_region }} (primary attempt did not win). Pod scale-up at 9:25."
+      ignore_errors: yes
+      when:
+        - worker_ready
+        - not (worker_actual_provider == provider_attempts[0].provider and worker_actual_region == provider_attempts[0].region)
+        - (tg_creds.stdout_lines[0] | default('')) != ''
+
+    - name: Notify — total failure, no worker today
+      shell: >
+        curl -s --max-time 10 -X POST
+        "https://api.telegram.org/bot{{ (tg_creds.stdout_lines[0] | default('')) }}/sendMessage"
+        -d chat_id="{{ (tg_creds.stdout_lines[1] | default('')) }}"
+        -d text="🚨 trading-worker provisioning FAILED across all providers/regions. No worker today. Instances tracked in {{ instances_file }} for teardown. Check /var/log/trading/provision_worker.log."
+      ignore_errors: yes
+      when:
+        - not worker_ready
+        - (tg_creds.stdout_lines[0] | default('')) != ''
+
+    - name: Fail the play if no worker was provisioned
+      fail:
+        msg: "No provider produced a Ready trading-worker node. See /var/log/trading/provision_worker.log."
+      when: not worker_ready

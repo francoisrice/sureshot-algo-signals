@@ -1,44 +1,97 @@
 ---
-# Gracefully removes the VX1 worker from the MicroK8s cluster and destroys
-# the Vultr instance to stop hourly billing.
+# Removes the worker from the cluster and destroys every tracked instance to
+# stop hourly billing. Reaps ALL instances in worker_instances (idempotent, 404
+# tolerated) plus the legacy single-ID file, so a box left by a failed teardown
+# is cleaned on the next cycle. See README.md.
 #
-# Run by orchestrator system cron at 4:15pm ET Mon-Fri (after market-close CronJob).
-# Requires env vars: VULTR_API_KEY
+# Run by orchestrator system cron at 4:15pm ET Mon-Fri. Requires: VULTR_API_KEY
 
-- name: Deprovision VX1 worker node
+- name: Deprovision worker node
   hosts: localhost
   connection: local
   become: yes
   vars:
     vultr_api_key: "{{ lookup('env', 'VULTR_API_KEY') }}"
+    instances_file: /opt/trading/secrets/worker_instances
+    legacy_id_file: /opt/trading/secrets/worker_instance_id
 
   tasks:
-    - name: Read worker instance ID
+    - name: Remove worker node from cluster (drain + delete)
+      command: "{{ item }}"
+      loop:
+        - microk8s kubectl drain trading-worker --ignore-daemonsets --delete-emptydir-data --force
+        - microk8s kubectl delete node trading-worker --ignore-not-found
+      ignore_errors: yes
+
+    # --- Build the list of instances to reap ------------------------------
+    - name: Read tracked instances file
       slurp:
-        src: /opt/trading/secrets/worker_instance_id
-      register: instance_id_file
+        src: "{{ instances_file }}"
+      register: instances_raw
+      ignore_errors: yes
 
-    - name: Set instance ID fact
+    - name: Read legacy single-ID file
+      slurp:
+        src: "{{ legacy_id_file }}"
+      register: legacy_raw
+      ignore_errors: yes
+
+    - name: Parse tracked instances (provider<TAB>region<TAB>id per line)
       set_fact:
-        worker_instance_id: "{{ instance_id_file.content | b64decode | trim }}"
+        tracked_instances: >-
+          {{ ((instances_raw.content | default('') | b64decode).splitlines()
+              | select('search', '\t') | list)
+             | map('regex_replace', '^([^\t]*)\t([^\t]*)\t(.*)$', '\1|\3')
+             | list }}
 
-    - name: Drain worker node (evict pods gracefully)
-      command: microk8s kubectl drain trading-worker --ignore-daemonsets --delete-emptydir-data --force
-      ignore_errors: yes
+    - name: Append legacy Vultr instance ID if present
+      set_fact:
+        tracked_instances: "{{ tracked_instances + ['vultr|' + (legacy_raw.content | b64decode | trim)] }}"
+      when:
+        - legacy_raw.content is defined
+        - (legacy_raw.content | b64decode | trim) | length > 0
 
-    - name: Remove worker node from cluster
-      command: microk8s kubectl delete node trading-worker
-      ignore_errors: yes
-
-    - name: Destroy VX1 instance via Vultr API
+    # --- Destroy each instance idempotently -------------------------------
+    - name: Destroy Vultr instances
       uri:
-        url: "https://api.vultr.com/v2/instances/{{ worker_instance_id }}"
+        url: "https://api.vultr.com/v2/instances/{{ item.split('|')[1] }}"
         method: DELETE
         headers:
           Authorization: "Bearer {{ vultr_api_key }}"
-        status_code: 204
+        status_code: [204, 404]
+      loop: "{{ tracked_instances }}"
+      when:
+        - item.split('|')[0] == 'vultr'
+        - (item.split('|')[1] | trim) | length > 0
+      register: vultr_deletes
+      failed_when: false
 
-    - name: Remove instance ID file
+    # NOTE: add a `Destroy <provider> instances` block here when a second cloud
+    # is wired in (guard on item.split('|')[0] == '<provider>').
+
+    # A genuine reap is HTTP 204 (deleted) or 404 (already gone). Anything else
+    # (5xx, or a connection failure -> status 0/undefined) is an un-reaped box.
+    - name: Count un-reaped instances
+      set_fact:
+        unreaped_count: >-
+          {{ (vultr_deletes.results | default([]))
+             | map(attribute='status', default=0) | map('int')
+             | difference([204, 404]) | length }}
+
+    - name: Log teardown outcome
+      lineinfile:
+        path: /var/log/trading/deprovision_worker.log
+        line: "{{ lookup('pipe', 'date -Is') }} [deprovision] reaped {{ tracked_instances | length }} tracked instance(s); un-reaped={{ unreaped_count }}"
+        create: yes
+
+    # --- Clear tracking only after a clean sweep --------------------------
+    # If any DELETE didn't return 204/404 (e.g. API down), keep the files so the
+    # next deprovision retries — this is the orphan self-heal path.
+    - name: Remove tracking files after successful teardown
       file:
-        path: /opt/trading/secrets/worker_instance_id
+        path: "{{ item }}"
         state: absent
+      loop:
+        - "{{ instances_file }}"
+        - "{{ legacy_id_file }}"
+      when: unreaped_count | int == 0

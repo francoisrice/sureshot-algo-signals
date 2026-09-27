@@ -1,0 +1,158 @@
+---
+# One provisioning attempt against a single provider/region. Included in an
+# ordered loop by provision_worker.yml (loop_var: attempt), guarded by
+# `when: not worker_ready`. See README.md for the full design and contract.
+#   in:  attempt.provider, attempt.region, ssh_pubkey, join_token_ttl,
+#        node_ready_timeout, instances_file
+#   out: worker_ready, provider_api_down
+
+- name: "[{{ attempt.provider }}/{{ attempt.region }}] Generate a fresh MicroK8s join token"
+  # Fresh per attempt so a slow install + retry can't outlive the token TTL.
+  command: "microk8s add-node --token-ttl {{ join_token_ttl }} --format short"
+  register: join_output
+
+- name: "[{{ attempt.provider }}/{{ attempt.region }}] Extract join command and orchestrator IP"
+  set_fact:
+    join_cmd: "{{ join_output.stdout_lines | select('match', '.*microk8s join.*') | reject('match', '.*--worker.*') | first }}"
+    orchestrator_ip: "{{ (join_output.stdout_lines | select('match', '.*microk8s join.*') | reject('match', '.*--worker.*') | first).split('join ')[1].split(':')[0] }}"
+
+- name: "[{{ attempt.provider }}/{{ attempt.region }}] Render user_data with this attempt's token"
+  copy:
+    content: |
+      #!/bin/bash
+      set -e
+      # Explicitly inject SSH key in case Vultr metadata injection is skipped
+      mkdir -p /root/.ssh
+      chmod 700 /root/.ssh
+      echo "{{ ssh_pubkey.stdout_lines[0] | default('') }}" >> /root/.ssh/authorized_keys
+      chmod 600 /root/.ssh/authorized_keys
+      apt-get update -y
+      apt-get install -y snapd python3 python3-pip docker.io ufw
+      # Open ports required for K8s kubelet and Calico CNI
+      ufw allow 22/tcp
+      ufw allow 10250/tcp
+      ufw allow 10255/tcp
+      ufw allow 179/tcp
+      ufw allow 4789/udp
+      ufw --force enable
+      # NAT pod CIDR (10.1.0.0/16) so pods can reach the internet.
+      # Calico manages pod routing but does not add a MASQUERADE rule when UFW is active —
+      # without this, outbound pod connections time out silently.
+      iptables -t nat -A POSTROUTING -s 10.1.0.0/16 ! -d 10.0.0.0/8 -j MASQUERADE
+      # Persist across reboots and UFW reloads by inserting into the *nat section of before.rules
+      sed -i '/^\*nat/a -A POSTROUTING -s 10.1.0.0\/16 ! -d 10.0.0.0\/8 -j MASQUERADE' /etc/ufw/before.rules
+      snap install microk8s --classic --channel=1.31/stable
+      microk8s status --wait-ready --timeout=300
+      {{ join_cmd }} --worker
+      # MicroK8s join writes 127.0.0.1 in kubelet.config; patch it to the real orchestrator IP
+      sed -i 's|server: https://127.0.0.1:16443|server: https://{{ orchestrator_ip }}:16443|g' \
+          /var/snap/microk8s/current/credentials/kubelet.config
+      systemctl restart snap.microk8s.daemon-kubelite
+    dest: /tmp/worker_userdata.sh
+    mode: '0600'
+
+- name: "[{{ attempt.provider }}/{{ attempt.region }}] Base64 encode user_data (single line)"
+  command: base64 -w 0 /tmp/worker_userdata.sh
+  register: userdata_b64
+
+# --- Create instance (provider-specific; see README "Adding a second cloud") ---
+- name: "[vultr/{{ attempt.region }}] Create instance via Vultr API"
+  uri:
+    url: "https://api.vultr.com/v2/instances"
+    method: POST
+    headers:
+      Authorization: "Bearer {{ vultr_api_key }}"
+      Content-Type: "application/json"
+    body_format: json
+    body:
+      label: "trading-worker"
+      plan: "{{ worker_plan }}"
+      region: "{{ attempt.region }}"
+      os_id: "{{ worker_os_id }}"
+      hostname: "trading-worker"
+      ssh_key_ids: ["{{ ssh_key_id }}"]
+      backups: "disabled"
+      user_data: "{{ userdata_b64.stdout }}"
+    status_code: [202, 400, 401, 403, 429, 500, 502, 503]
+  register: create_result
+  failed_when: false
+  when: attempt.provider == 'vultr'
+
+- name: "[{{ attempt.provider }}/{{ attempt.region }}] Normalise create result"
+  # provider_api_down: 5xx or a connection failure (status <=0) => control plane
+  # is down, retrying the same provider is pointless (see README).
+  set_fact:
+    created_ok: "{{ (create_result.status | default(0)) == 202 and (create_result.json.instance.id is defined) }}"
+    created_instance_id: "{{ create_result.json.instance.id | default('') }}"
+    provider_api_down: "{{ (create_result.status | default(0)) | int >= 500 or (create_result.status | default(0)) | int <= 0 }}"
+
+- name: "[{{ attempt.provider }}/{{ attempt.region }}] Log create failure"
+  lineinfile:
+    path: /var/log/trading/provision_worker.log
+    line: "{{ lookup('pipe', 'date -Is') }} [provision] create failed on {{ attempt.provider }}/{{ attempt.region }} (status={{ create_result.status | default('n/a') }}, api_down={{ provider_api_down }}, err={{ create_result.json.error | default('n/a') }})"
+    create: yes
+  when: not created_ok
+
+# --- Track the instance the moment it exists (reapable even if we die here) ---
+# Appended before the wait so a wedged/orphaned box is always reapable.
+- name: "[{{ attempt.provider }}/{{ attempt.region }}] Record instance ID for teardown"
+  lineinfile:
+    path: "{{ instances_file }}"
+    line: "{{ attempt.provider }}\t{{ attempt.region }}\t{{ created_instance_id }}"
+    create: yes
+    mode: '0600'
+  when: created_ok
+
+# --- Bounded, Ready-gated wait -------------------------------------------
+- name: "[{{ attempt.provider }}/{{ attempt.region }}] Wait for node to reach Ready (bounded)"
+  shell: |
+    end=$((SECONDS + {{ node_ready_timeout }}))
+    while [ $SECONDS -lt $end ]; do
+      status=$(microk8s kubectl get node trading-worker \
+        -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)
+      if [ "$status" = "True" ]; then
+        echo "$(date -Is) [wait-for-node] trading-worker Ready via {{ attempt.provider }}/{{ attempt.region }}" \
+          >> /var/log/trading/provision_worker.log
+        exit 0
+      fi
+      echo "$(date -Is) [wait-for-node] {{ attempt.provider }}/{{ attempt.region }}: not Ready yet (${SECONDS}s/{{ node_ready_timeout }}s)" \
+        >> /var/log/trading/provision_worker.log
+      sleep 15
+    done
+    exit 1
+  register: ready_wait
+  failed_when: false
+  when: created_ok
+
+- name: "[{{ attempt.provider }}/{{ attempt.region }}] Mark worker ready"
+  set_fact:
+    worker_ready: true
+    worker_actual_provider: "{{ attempt.provider }}"
+    worker_actual_region: "{{ attempt.region }}"
+  when: created_ok and ready_wait.rc == 0
+
+# --- Wedge cleanup: created but never went Ready (see README) --------------
+- name: "[{{ attempt.provider }}/{{ attempt.region }}] Destroy wedged instance (best-effort)"
+  uri:
+    url: "https://api.vultr.com/v2/instances/{{ created_instance_id }}"
+    method: DELETE
+    headers:
+      Authorization: "Bearer {{ vultr_api_key }}"
+    status_code: [204, 404]
+  failed_when: false
+  when:
+    - created_ok
+    - ready_wait.rc != 0
+    - attempt.provider == 'vultr'
+
+- name: "[{{ attempt.provider }}/{{ attempt.region }}] Remove stale NotReady node object"
+  command: microk8s kubectl delete node trading-worker --ignore-not-found
+  ignore_errors: yes
+  when: created_ok and ready_wait.rc != 0
+
+- name: "[{{ attempt.provider }}/{{ attempt.region }}] Log wedge"
+  lineinfile:
+    path: /var/log/trading/provision_worker.log
+    line: "{{ lookup('pipe', 'date -Is') }} [provision] WEDGE on {{ attempt.provider }}/{{ attempt.region }} (instance {{ created_instance_id }} created but never Ready in {{ node_ready_timeout }}s); destroyed, advancing to next attempt"
+    create: yes
+  when: created_ok and ready_wait.rc != 0
