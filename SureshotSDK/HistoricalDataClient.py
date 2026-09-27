@@ -5,7 +5,7 @@ from typing import Dict, List, Optional, Tuple
 
 from .LondonStrategicEdge import LondonStrategicEdgeClient
 from .Polygon import PolygonClient
-from .BacktestingPriceCache import BacktestingPriceCache
+from .BacktestingPriceCache import BacktestingPriceCache, get_shared_cache
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +45,7 @@ class HistoricalDataClient:
     ):
         self.lse_client = lse_client or self._build_lse_client()
         self.polygon_client = polygon_client or self._build_polygon_client(use_vault)
-        self.price_cache = price_cache or BacktestingPriceCache(cache_dir)
+        self.price_cache = price_cache or get_shared_cache(cache_dir)
 
         if not self.lse_client and not self.polygon_client:
             raise ValueError(

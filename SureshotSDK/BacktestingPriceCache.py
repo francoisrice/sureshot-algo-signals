@@ -9,6 +9,17 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+_sharedCaches: Dict[str, "BacktestingPriceCache"] = {}
+_sharedCachesLock = threading.Lock()
+
+
+def get_shared_cache(cache_dir: str = ".backtest_cache") -> "BacktestingPriceCache":
+    """One cache per directory per process; rebuilding it rescans and reloads every 1d file."""
+    with _sharedCachesLock:
+        if cache_dir not in _sharedCaches:
+            _sharedCaches[cache_dir] = BacktestingPriceCache(cache_dir)
+        return _sharedCaches[cache_dir]
+
 
 class BacktestingPriceCache:
     """
@@ -31,6 +42,7 @@ class BacktestingPriceCache:
         self._index = {}  # data structure: {(symbol, timeframe): (path, start_str, end_str)}
         self._index_lock = threading.Lock()
         self._data_cache = {}  # data structure: {(symbol, timeframe): List[Dict]} — eagerly loaded for 1d
+        self._emptyFetches = set()  # (symbol, timeframe, startStr, endStr) that returned nothing this process
         self._build_index()
         self._preload_1d_data()
 
@@ -155,6 +167,16 @@ class BacktestingPriceCache:
         merged.sort(key=lambda b: b.get('t', 0))
         return merged
 
+    def _empty_fetch_key(self, symbol: str, timeframe: str, start_date: datetime, end_date: datetime) -> Tuple:
+        return (symbol, timeframe, self._date_to_str(start_date), self._date_to_str(end_date))
+
+    def fetch_known_empty(self, symbol: str, timeframe: str, start_date: datetime, end_date: datetime) -> bool:
+        return self._empty_fetch_key(symbol, timeframe, start_date, end_date) in self._emptyFetches
+
+    def mark_fetch_empty(self, symbol: str, timeframe: str, start_date: datetime, end_date: datetime):
+        """In-process only: a rate-limited failure looks identical to no-data, so never persist this"""
+        self._emptyFetches.add(self._empty_fetch_key(symbol, timeframe, start_date, end_date))
+
     def get(
         self,
         symbol: str,
@@ -207,7 +229,7 @@ class BacktestingPriceCache:
 
         # Check if we need to extend backwards
         if start_date < cache_start:
-            if fetch_fn:
+            if fetch_fn and not self.fetch_known_empty(symbol, timeframe, start_date, cache_start):
                 logger.debug(f"Extending cache backwards: {req_start_str} to {cache_start_str}")
                 pre_bars = fetch_fn(symbol, start_date, cache_start, timeframe)
                 earliestFetched = min((self._get_bar_date(b) for b in pre_bars), default=None) if pre_bars else None
@@ -215,12 +237,14 @@ class BacktestingPriceCache:
                     result_bars = self._merge_bars(pre_bars, result_bars)
                     new_start_str = self._date_to_str(earliestFetched)
                     cache_updated = True
-            else:
+                else:
+                    self.mark_fetch_empty(symbol, timeframe, start_date, cache_start)
+            elif not fetch_fn:
                 logger.warning(f"Requested start {req_start_str} before cache start {cache_start_str}, no fetch_fn provided")
 
         # Check if we need to extend forwards
         if end_date > cache_end:
-            if fetch_fn:
+            if fetch_fn and not self.fetch_known_empty(symbol, timeframe, cache_end, end_date):
                 logger.debug(f"Extending cache forwards: {cache_end_str} to {req_end_str}")
                 post_bars = fetch_fn(symbol, cache_end, end_date, timeframe)
                 latestFetched = max((self._get_bar_date(b) for b in post_bars), default=None) if post_bars else None
@@ -228,7 +252,9 @@ class BacktestingPriceCache:
                     result_bars = self._merge_bars(result_bars, post_bars)
                     new_end_str = self._date_to_str(latestFetched)
                     cache_updated = True
-            else:
+                else:
+                    self.mark_fetch_empty(symbol, timeframe, cache_end, end_date)
+            elif not fetch_fn:
                 logger.warning(f"Requested end {req_end_str} after cache end {cache_end_str}, no fetch_fn provided")
 
         # Save updated cache if extended

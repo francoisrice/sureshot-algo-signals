@@ -19,12 +19,22 @@ class Portfolio:
         self.initial_cash = cash
         self.positions = {}  # symbol -> shares
         self.positionValues = {}  # symbol -> current market value
+        self.avgPrices = {}  # symbol -> cost basis per share, needed to value shorts
         self.invested = False
         self.data_client = HistoricalDataClient()
         self.ibkr_client = IBKRClient()
         self.logger = logging.getLogger(__name__)
         self.strategy_name = strategy_name
         self.api_url = os.getenv("API_URL")
+
+    def _blended_avg_price(self, symbol: str, added_shares: float, price: float) -> float:
+        """Cost basis after adding a lot. Call after self.positions[symbol] is updated."""
+        priorQty = self.positions.get(symbol, 0) - added_shares
+        priorAvg = self.avgPrices.get(symbol, price)
+        totalQty = priorQty + added_shares
+        if totalQty <= 0:
+            return price
+        return (priorQty * priorAvg + added_shares * price) / totalQty
 
     def buy_all(self, symbol: str, current_price: Optional[float] = None):
         """
@@ -49,6 +59,7 @@ class Portfolio:
             total_cost = shares_to_buy * current_price
             self.positions[symbol] = self.positions.get(symbol, 0) + shares_to_buy
             self.positionValues[symbol] = self.positions[symbol] * current_price
+            self.avgPrices[symbol] = self._blended_avg_price(symbol, shares_to_buy, current_price)
             self.cash -= total_cost
             self.invested = len(self.positions) > 0
             self.logger.info(f"Bought {shares_to_buy} shares of {symbol} at ${current_price:.2f}")
@@ -90,8 +101,8 @@ class Portfolio:
         totalProceeds = sharesToSell * current_price
 
         del self.positions[symbol]
-        if symbol in self.positionValues:
-            del self.positionValues[symbol]
+        self.positionValues.pop(symbol, None)
+        self.avgPrices.pop(symbol, None)
 
         # Update cash and positions in the database
         self.cash += totalProceeds
@@ -122,6 +133,7 @@ class Portfolio:
         if total_cost <= self.cash:
             self.positions[symbol] = self.positions.get(symbol, 0) + shares
             self.positionValues[symbol] = self.positions[symbol] * current_price
+            self.avgPrices[symbol] = self._blended_avg_price(symbol, shares, current_price)
             self.cash -= total_cost
             self.invested = len(self.positions) > 0
             return True
@@ -153,8 +165,8 @@ class Portfolio:
 
         if self.positions[symbol] == 0:
             del self.positions[symbol]
-            if symbol in self.positionValues:
-                del self.positionValues[symbol]
+            self.positionValues.pop(symbol, None)
+            self.avgPrices.pop(symbol, None)
         else:
             self.positionValues[symbol] = self.positions[symbol] * current_price
 
@@ -223,6 +235,7 @@ class Portfolio:
         self.initial_cash = cash
         self.positions = {}
         self.positionValues = {}
+        self.avgPrices = {}
         self.invested = False
 
     def __str__(self):

@@ -85,6 +85,15 @@ class BacktestRunner:
         """
         logger.info(f"Starting backtest for {self.strategy.name}")
 
+        if self.strategy.api_url:
+            try:
+                requests.delete(f"{self.strategy.api_url}/orders/clear", params={"strategy_name": self.strategy.name})
+            except Exception as e:
+                logger.warning(f"Failed to clear orders before backtest: {e}")
+
+        self.engine.equity_curve = [(self.start_date, self.initial_cash)]
+        self.engine.daily_returns = []
+
         # Get trading symbol from strategy (different strategies use different attribute names)
         trading_symbol = getattr(self.strategy, 'tradingSymbol', None) or getattr(self.strategy, 'signalSymbol', None) or getattr(self.strategy, 'positionSymbol', None)
         position_symbol = getattr(self.strategy, 'positionSymbol', None)
@@ -115,6 +124,15 @@ class BacktestRunner:
         logger.info("Backtest execution completed")
         self.strategy.backtest_close()
 
+        if self.strategy.api_url:
+            try:
+                portfolioResp = requests.get(f"{self.strategy.api_url}/portfolio/{self.strategy.name}")
+                if portfolioResp.status_code == 200:
+                    finalCash = portfolioResp.json().get('cash', self.initial_cash)
+                    self._settle_final_equity(finalCash)
+            except Exception as e:
+                logger.warning(f"Failed to record final equity: {e}")
+
         # Calculate and display results
         logger.info("Calculating metrics...")
         self.engine.calculate_metrics(self.strategy.api_url)
@@ -123,6 +141,20 @@ class BacktestRunner:
 
         return self.engine.results
     
+    def _settle_final_equity(self, final_cash: float):
+        """Overwrite the final mark-to-market point; appending would duplicate the last bar"""
+        if not self.engine.equity_curve:
+            self.engine.equity_curve.append((self.end_date, final_cash))
+            return
+
+        lastDate, lastEquity = self.engine.equity_curve[-1]
+        self.engine.equity_curve[-1] = (lastDate, final_cash)
+
+        if len(self.engine.equity_curve) > 1 and self.engine.daily_returns:
+            priorEquity = self.engine.equity_curve[-2][1]
+            if priorEquity > 0:
+                self.engine.daily_returns[-1] = (final_cash - priorEquity) / priorEquity
+
     def _process_daily_data(self, data: List[Dict]):
         valuationSeries = self._fetch_valuation_series()
 
@@ -139,14 +171,14 @@ class BacktestRunner:
                 if close is not None:
                     symbolPrices[symbol] = close
 
-            self.engine.record_equity(current_date, symbolPrices, self.strategy.api_url)
-
             # Call strategy's on_data method with current price and date
             try:
                 self.strategy.on_data(price=current_price, current_date=current_date)
             except Exception as e:
                 logger.error(f"Error in strategy.on_data() on {current_date.date()}: {e}")
                 continue
+
+            self.engine.record_equity(current_date, symbolPrices, self.strategy.api_url)
 
     def _fetch_valuation_series(self) -> Dict[str, Dict]:
         """Daily closes for strategy.valuationSymbols so multi-leg positions are valued in the equity curve"""

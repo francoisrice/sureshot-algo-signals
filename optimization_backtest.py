@@ -13,20 +13,21 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Tuple, Callable, Any
 
-from SureshotSDK.optimization.multipoint_hill_climbing import MultipointHillClimbing
+from SureshotSDK.optimization import MultipointHillClimbing, GridSearch
 
 # ============================================================================
 # OPTIMIZATION CONFIGURATION
 # ============================================================================
 
-# Strategy to optimize
-PORTFOLIO = "portfolio_multi_strategy"
-STRATEGY = "IncredibleLeverage_SPXL"
+# Single source of truth: backtest.py runs the backtest, so it decides which strategy
+from backtest import PORTFOLIO, STRATEGY
+
 STRATEGY_FILE = f"{PORTFOLIO}/{STRATEGY}/main.py"
 
 # Parameter ranges: (min, max, step)
 # These must match OPTIMIZATION_ prefixed variables in the strategy file
-OPTIMIZATION_MAX_MID_MONTH_LOSS = (0.01, 1.0, 0.01)
+# OPTIMIZATION_MAX_MID_MONTH_LOSS = (0.01, 1.0, 0.01)
+OPTIMIZATION_STOP_LOSS_PERCENT = (0.05, 1.0, 0.05)
 
 # Gradient descent settings
 PORTFOLIO_API_URL = "http://localhost:8000"
@@ -34,6 +35,8 @@ MAX_ITERATIONS = 1000
 STEP_REDUCTION_FACTOR = 0.5
 MIN_STEP_SIZE = 0.01  # Stop if objective change < this
 NUM_STARTING_POINTS = 4  # Number of starting points for multipoint search
+
+OPTIMIZATION_ALGORITHM = "grid_search"  # Options: grid_search, hill_climbing
 
 # Results output files
 RESULTS_DIR = "optimization_results"
@@ -281,18 +284,18 @@ class BacktestOptimizer:
         metrics = run_backtest()
 
         if not metrics:
-            return {}, 0.0
+            return {}, float('-inf')
 
         objective = OBJECTIVE_FUNCTION(metrics)
 
-        # Log this run
+        # Numbered here, not in on_iteration: that callback fires after this run is logged
         self.logger.log_run(self.iteration, params, metrics, objective)
+        self.iteration += 1
 
         return metrics, objective
 
     def on_iteration(self, iteration: int, params: Dict, objective: float, metrics: Dict):
         """Callback for iteration logging"""
-        self.iteration = iteration
         print(f"\n{'='*40}")
         print(f"Iteration {iteration + 1}")
         print(f"{'='*40}")
@@ -341,13 +344,19 @@ def optimize():
             print(f"WARNING: No range defined for {param}")
 
     # Initialize optimizer
-    optimizer = MultipointHillClimbing(
-        api_url=PORTFOLIO_API_URL,
-        max_iterations=MAX_ITERATIONS,
-        min_step_size=MIN_STEP_SIZE,
-        step_reduction_factor=STEP_REDUCTION_FACTOR,
-        num_points=NUM_STARTING_POINTS
-    )
+    if OPTIMIZATION_ALGORITHM == "grid_search":
+        optimizer = GridSearch(
+            api_url=PORTFOLIO_API_URL,
+            max_iterations=MAX_ITERATIONS
+        )
+    else:
+        optimizer = MultipointHillClimbing(
+            api_url=PORTFOLIO_API_URL,
+            max_iterations=MAX_ITERATIONS,
+            min_step_size=MIN_STEP_SIZE,
+            step_reduction_factor=STEP_REDUCTION_FACTOR,
+            num_points=NUM_STARTING_POINTS
+        )
 
     # Create backtest evaluator
     evaluator = BacktestOptimizer(STRATEGY_FILE, logger)

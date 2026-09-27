@@ -7,9 +7,46 @@ from typing import Dict, List, Optional, Tuple
 from pathlib import Path
 from .Portfolio import Portfolio
 from .HistoricalDataClient import HistoricalDataClient
-from .BacktestingPriceCache import BacktestingPriceCache
+from .BacktestingPriceCache import BacktestingPriceCache, get_shared_cache
 
 logger = logging.getLogger(__name__)
+
+TRADING_DAYS_PER_YEAR = 252
+# Caps Sharpe/Sortino when there is no downside volatility; inf breaks JSON and optimizers
+MAX_RISK_ADJUSTED_RATIO = 10.0
+
+
+def annualized_ratio(mean_return: float, deviation: float) -> float:
+    if deviation <= 0:
+        return MAX_RISK_ADJUSTED_RATIO if mean_return > 0 else 0.0
+    ratio = (mean_return / deviation) * np.sqrt(TRADING_DAYS_PER_YEAR)
+    return float(np.clip(ratio, -MAX_RISK_ADJUSTED_RATIO, MAX_RISK_ADJUSTED_RATIO))
+
+
+def downside_deviation(returns: List[float]) -> float:
+    """Root-mean-square of the negative returns, averaged over the full series (MAR = 0)"""
+    return float(np.sqrt(np.mean([min(r, 0.0) ** 2 for r in returns])))
+
+
+def geometric_expectancy_pct(trade_return_pcts: List[float]) -> float:
+    """Per-trade geometric mean return; arithmetic averaging overstates compounded growth"""
+    if not trade_return_pcts:
+        return 0.0
+    growthFactors = [1.0 + pct / 100.0 for pct in trade_return_pcts]
+    if any(factor <= 0 for factor in growthFactors):
+        return -100.0
+    compounded = float(np.prod(growthFactors))
+    return (compounded ** (1.0 / len(growthFactors)) - 1.0) * 100.0
+
+
+def max_drawdown_pct(equity_values: List[float], starting_equity: float) -> float:
+    peak = starting_equity
+    maxDrawdown = 0.0
+    for equity in equity_values:
+        peak = max(peak, equity)
+        if peak > 0:
+            maxDrawdown = max(maxDrawdown, ((peak - equity) / peak) * 100.0)
+    return maxDrawdown
 
 
 class Trade:
@@ -51,7 +88,7 @@ class BacktestEngine:
         self.initial_cash = initial_cash
         self.portfolio = Portfolio(cash=initial_cash)
         self.use_cache = use_cache
-        self.price_cache = BacktestingPriceCache(cache_dir) if use_cache else None
+        self.price_cache = get_shared_cache(cache_dir) if use_cache else None
         self.data_client = HistoricalDataClient(price_cache=self.price_cache, cache_dir=cache_dir)
 
         # Backtest state
@@ -99,11 +136,17 @@ class BacktestEngine:
             if cached_data:
                 return cached_data
 
+        if self.price_cache and self.price_cache.fetch_known_empty(symbol, timeframe, start_date, end_date):
+            return []
+
         # No cache or cache miss - fetch and store
         data = self._fetch_from_api(symbol, start_date, end_date, timeframe)
 
-        if self.use_cache and self.price_cache and data:
-            self.price_cache.set(symbol, start_date, end_date, timeframe, data)
+        if self.use_cache and self.price_cache:
+            if data:
+                self.price_cache.set(symbol, start_date, end_date, timeframe, data)
+            else:
+                self.price_cache.mark_fetch_empty(symbol, timeframe, start_date, end_date)
 
         return data
 
@@ -166,213 +209,237 @@ class BacktestEngine:
         return None
 
     def record_equity(self, date: datetime, symbol_prices: Dict[str, float], api_url: str = None):
-        """
-        Record portfolio equity at a point in time
-
-        Args:
-            date: Current date
-            symbol_prices: Dictionary of symbol -> current price
-        """
-        # Calculate total equity
-        total_equity = self.portfolio.cash
+        totalEquity = self.portfolio.cash
 
         if api_url:
-            positions_response = requests.get(f"{api_url}/positions?{self.strategy_name}")
-            positions_response.raise_for_status()
-            positions = positions_response.json()
-            for pos in positions:
-                if pos['symbol'] in symbol_prices:
-                    total_equity += pos['quantity'] * symbol_prices[pos['symbol']]
+            try:
+                portfolioResponse = requests.get(f"{api_url}/portfolio/{self.strategy_name}")
+                if portfolioResponse.status_code == 200:
+                    totalEquity = portfolioResponse.json().get('cash', 0.0)
+            except Exception as e:
+                logger.error(f"Failed to fetch portfolio cash in record_equity: {e}")
+
+            try:
+                positionsResponse = requests.get(f"{api_url}/positions", params={"strategy_name": self.strategy_name})
+                if positionsResponse.status_code == 200:
+                    positionsData = positionsResponse.json()
+                    for pos in positionsData:
+                        symbol = pos['symbol']
+                        quantity = pos['quantity']
+                        avgPrice = pos.get('avg_price', 0.0)
+                        curPrice = symbol_prices.get(symbol, pos.get('current_price', avgPrice))
+                        if quantity > 0:
+                            totalEquity += quantity * curPrice
+                        elif quantity < 0:
+                            totalEquity += abs(quantity) * (2.0 * avgPrice - curPrice)
+            except Exception as e:
+                logger.error(f"Failed to fetch positions in record_equity: {e}")
         else:
             for symbol, shares in self.portfolio.positions.items():
                 if symbol in symbol_prices:
-                    total_equity += shares * symbol_prices[symbol]
+                    curPrice = symbol_prices[symbol]
+                    if shares > 0:
+                        totalEquity += shares * curPrice
+                    elif shares < 0:
+                        avgPrice = self.portfolio.avgPrices.get(symbol, curPrice)
+                        totalEquity += abs(shares) * (2.0 * avgPrice - curPrice)
 
-        self.equity_curve.append((date, total_equity))
+        self.equity_curve.append((date, totalEquity))
 
-        # Calculate daily return
         if len(self.equity_curve) > 1:
-            prev_equity = self.equity_curve[-2][1]
-            daily_return = (total_equity - prev_equity) / prev_equity
-            self.daily_returns.append(daily_return)
+            prevEquity = self.equity_curve[-2][1]
+            if prevEquity > 0:
+                dailyReturn = (totalEquity - prevEquity) / prevEquity
+                self.daily_returns.append(dailyReturn)
 
     def calculate_metrics(self, api_url: str = None) -> Dict:
-        """
-        Calculate comprehensive backtest metrics
+        orders = []
+        initialCash = self.initial_cash
+        finalValue = self.portfolio.cash
 
-        Args:
-            api_url: Base URL of the MultiStrategyAPI
+        if api_url:
+            try:
+                ordersResponse = requests.get(f"{api_url}/orders", params={"strategy_name": self.strategy_name, "limit": 100000})
+                ordersResponse.raise_for_status()
+                orders = ordersResponse.json()
+            except Exception as e:
+                logger.error(f"Failed to fetch orders from API: {e}")
+                return {}
 
-        Returns:
-            Dictionary of performance metrics
-        """
+            try:
+                portfolioResponse = requests.get(f"{api_url}/portfolio/{self.strategy_name}")
+                portfolioResponse.raise_for_status()
+                portfolioState = portfolioResponse.json()
+                initialCash = portfolioState['initial_cash']
+                finalValue = portfolioState['total_value']
+            except Exception as e:
+                logger.error(f"Failed to fetch portfolio state from API: {e}")
+                return {}
+        else:
+            if self.equity_curve:
+                finalValue = self.equity_curve[-1][1]
 
-        # Fetch orders from API
-        try:
-            orders_response = requests.get(f"{api_url}/orders")
-            orders_response.raise_for_status()
-            orders = orders_response.json()
-        except Exception as e:
-            logger.error(f"Failed to fetch orders from API: {e}")
-            return {}
+        totalReturn = finalValue - initialCash
+        totalReturnPct = (totalReturn / initialCash) * 100.0 if initialCash > 0 else 0.0
 
-        # Fetch portfolio state for final value
-        try:
-            portfolio_response = requests.get(f"{api_url}/portfolio/{self.strategy_name}")
-            portfolio_response.raise_for_status()
-            portfolio_state = portfolio_response.json()
-        except Exception as e:
-            logger.error(f"Failed to fetch portfolio state from API: {e}")
-            return {}
-
-        # Sort orders by id (chronological order)
         orders = sorted(orders, key=lambda x: x['id'])
 
-        # Get portfolio values
-        initial_cash = portfolio_state['initial_cash']
-        final_value = portfolio_state['total_value']
-        total_return = final_value - initial_cash
-        total_return_pct = (total_return / initial_cash) * 100 if initial_cash > 0 else 0
-
-        # Pair BUY and SELL orders to calculate P&L for each round trip
-        buy_orders = [o for o in orders if o['order_type'] == 'BUY']
-        sell_orders = [o for o in orders if o['order_type'] == 'SELL']
-
-        # Calculate P&L for each sell by matching with preceding buy
         trades = []
-        for i, sell in enumerate(sell_orders):
-            if i < len(buy_orders):
-                buy = buy_orders[i]
-                pnl = sell['order_value'] - buy['order_value']
-                pnl_pct = (pnl / buy['order_value']) * 100
-                trades.append({
-                    'buy_value': buy['order_value'],
-                    'sell_value': sell['order_value'],
-                    'pnl': pnl,
-                    'pnl_pct': pnl_pct
-                })
+        if api_url and orders:
+            ordersBySymbol: Dict[str, List[Dict]] = {}
+            for o in orders:
+                sym = o['symbol']
+                ordersBySymbol.setdefault(sym, []).append(o)
 
-        # Separate winning and losing trades
-        winning_trades = [rt for rt in trades if rt['pnl'] > 0]
-        losing_trades = [rt for rt in trades if rt['pnl'] < 0]
-        total_trades = len(trades)
+            for sym, symOrders in ordersBySymbol.items():
+                openLots: List[Dict[str, Any]] = []
 
-        # Win/Loss statistics
-        num_wins = len(winning_trades)
-        num_losses = len(losing_trades)
-        win_rate = (num_wins / total_trades * 100) if total_trades > 0 else 0
-        loss_rate = (num_losses / total_trades * 100) if total_trades > 0 else 0
+                for order in symOrders:
+                    orderType = order['order_type']
+                    orderQty = order['quantity']
+                    orderPrice = order['price']
+                    if not orderPrice or orderPrice <= 0:
+                        continue
 
-        avg_win = np.mean([rt['pnl_pct'] for rt in winning_trades]) if winning_trades else 0
-        avg_loss = np.mean([rt['pnl_pct'] for rt in losing_trades]) if losing_trades else 0
+                    absQty = abs(orderQty)
+                    if absQty <= 0:
+                        continue
 
-        # Expectancy (average return per trade over 100 trades)
-        if total_trades > 0:
-            expectancy = (win_rate / 100 * avg_win) + (loss_rate / 100 * avg_loss)
-        else:
-            expectancy = 0
+                    if orderQty < 0:
+                        orderSide = 'SHORT' if orderType == 'SELL' else 'COVER'
+                    else:
+                        orderSide = 'LONG' if orderType == 'BUY' else 'SELL'
 
-        # Annualized return (CAGR)
+                    if not openLots:
+                        side = 'SHORT' if orderSide in ('SHORT', 'SELL') and orderType == 'SELL' else 'LONG'
+                        openLots.append({'qty': absQty, 'price': orderPrice, 'side': side})
+                        continue
+
+                    currSide = openLots[0]['side']
+                    isClosing = (currSide == 'LONG' and orderSide in ('SELL', 'SHORT') and orderType == 'SELL') or                                 (currSide == 'SHORT' and orderSide in ('COVER', 'LONG') and orderType == 'BUY')
+
+                    if isClosing:
+                        remainingCloseQty = absQty
+                        while openLots and remainingCloseQty > 0:
+                            lot = openLots[0]
+                            matchedQty = min(lot['qty'], remainingCloseQty)
+                            entryPrice = lot['price']
+
+                            if currSide == 'LONG':
+                                pnl = (orderPrice - entryPrice) * matchedQty
+                                pnlPct = ((orderPrice - entryPrice) / entryPrice) * 100.0 if entryPrice > 0 else 0.0
+                            else:
+                                pnl = (entryPrice - orderPrice) * matchedQty
+                                pnlPct = ((entryPrice - orderPrice) / entryPrice) * 100.0 if entryPrice > 0 else 0.0
+
+                            trades.append({
+                                'symbol': sym,
+                                'side': currSide,
+                                'quantity': matchedQty,
+                                'entry_price': entryPrice,
+                                'exit_price': orderPrice,
+                                'pnl': pnl,
+                                'pnl_pct': pnlPct
+                            })
+
+                            lot['qty'] -= matchedQty
+                            remainingCloseQty -= matchedQty
+                            if lot['qty'] <= 1e-6:
+                                openLots.pop(0)
+
+                        if remainingCloseQty > 1e-6:
+                            newSide = 'SHORT' if currSide == 'LONG' else 'LONG'
+                            openLots.append({'qty': remainingCloseQty, 'price': orderPrice, 'side': newSide})
+                    else:
+                        openLots.append({'qty': absQty, 'price': orderPrice, 'side': currSide})
+        elif self.trades:
+            for t in self.trades:
+                if hasattr(t, 'pnl') and t.pnl is not None:
+                    trades.append({
+                        'symbol': t.symbol,
+                        'pnl': t.pnl,
+                        'pnl_pct': getattr(t, 'pnl_percent', 0.0)
+                    })
+
+        winningTrades = [rt for rt in trades if rt['pnl'] > 0]
+        losingTrades = [rt for rt in trades if rt['pnl'] < 0]
+        totalTrades = len(trades)
+
+        numWins = len(winningTrades)
+        numLosses = len(losingTrades)
+        winRate = (numWins / totalTrades * 100.0) if totalTrades > 0 else 0.0
+        lossRate = (numLosses / totalTrades * 100.0) if totalTrades > 0 else 0.0
+
+        avgWin = float(np.mean([rt['pnl_pct'] for rt in winningTrades])) if winningTrades else 0.0
+        avgLoss = float(np.mean([rt['pnl_pct'] for rt in losingTrades])) if losingTrades else 0.0
+
+        expectancy = geometric_expectancy_pct([rt['pnl_pct'] for rt in trades])
+
         if self.start_date and self.end_date:
             days = (self.end_date - self.start_date).days
             years = days / 365.25
-            if years > 0:
-                cagr = (((final_value / initial_cash) ** (1 / years)) - 1) * 100
-            else:
-                cagr = 0
-        else:
-            cagr = 0
-
-        if self.daily_returns:
-            avg_daily_return = np.mean(self.daily_returns)
-            std_daily_return = np.std(self.daily_returns)
-            if std_daily_return > 0:
-                sharpe_ratio = (avg_daily_return / std_daily_return) * np.sqrt(252)
-            else:
-                sharpe_ratio = 0
-        
-        # Calculate returns from round trips for Sharpe/Sortino
-        # trade_returns = [rt['pnl_pct'] / 100 for rt in trades]  # Convert to decimal
-        # Sharpe Ratio annualized
-        # if trade_returns:
-        #     avg_return = np.mean(trade_returns)
-        #     std_return = np.std(trade_returns)
-        #     trades_per_year = max(1, total_trades / max(1, years)) if self.start_date and self.end_date else 1
-        #     if std_return > 0:
-        #         sharpe_ratio = (avg_return / std_return) * np.sqrt(trades_per_year)
-            # else:
-            #     sharpe_ratio = 0
-        else:
-            sharpe_ratio = 0
-            avg_return = 0
-
-        # Sortino Ratio (downside deviation)
-        if self.daily_returns:
-            downside_returns = [r for r in self.daily_returns if r < 0]
-        # if trade_returns:
-        #     downside_returns = [r for r in trade_returns if r < 0]
-            if downside_returns:
-                downside_std = np.std(downside_returns)
-                # trades_per_year = max(1, total_trades / max(1, years)) if self.start_date and self.end_date else 1
-                if downside_std > 0:
-                    sortino_ratio = (avg_daily_return / downside_std) * np.sqrt(252)
-                    # sortino_ratio = (avg_return / downside_std) * np.sqrt(trades_per_year)
+            if years > 0 and initialCash > 0:
+                if finalValue <= 0:
+                    cagr = -100.0
                 else:
-                    sortino_ratio = 0
+                    cagr = (((finalValue / initialCash) ** (1.0 / years)) - 1.0) * 100.0
             else:
-                sortino_ratio = float('inf') if avg_daily_return > 0 else 0
+                cagr = 0.0
         else:
-            sortino_ratio = 0
+            cagr = 0.0
 
-        # Maximum Drawdown from equity curve (if available) or from round trips
-        max_drawdown = 0
-        if self.equity_curve:
-            peak = self.equity_curve[0][1]
-            for date, equity in self.equity_curve:
-                if equity > peak:
-                    peak = equity
-                drawdown = ((peak - equity) / peak) * 100
-                if drawdown > max_drawdown:
-                    max_drawdown = drawdown
+        if self.daily_returns:
+            avgDailyReturn = float(np.mean(self.daily_returns))
+            stdDailyReturn = float(np.std(self.daily_returns, ddof=1)) if len(self.daily_returns) > 1 else 0.0
+            sharpeRatio = annualized_ratio(avgDailyReturn, stdDailyReturn)
+            sortinoRatio = annualized_ratio(avgDailyReturn, downside_deviation(self.daily_returns))
         else:
-            # Estimate from round trip returns
-            cumulative = initial_cash
-            peak = initial_cash
+            sharpeRatio = 0.0
+            sortinoRatio = 0.0
+
+        if self.equity_curve:
+            maxDrawdown = max_drawdown_pct([equity for _, equity in self.equity_curve], initialCash)
+        elif trades:
+            cumulative = initialCash
+            equitySteps = []
             for rt in trades:
                 cumulative += rt['pnl']
-                if cumulative > peak:
-                    peak = cumulative
-                drawdown = ((peak - cumulative) / peak) * 100 if peak > 0 else 0
-                if drawdown > max_drawdown:
-                    max_drawdown = drawdown
-
-        # Kelly Criterion
-        if avg_loss != 0 and avg_win != 0:
-            kelly = ((win_rate) / abs(avg_loss)) - ((loss_rate) / abs(avg_win))
+                equitySteps.append(cumulative)
+            maxDrawdown = max_drawdown_pct(equitySteps, initialCash)
         else:
-            kelly = 0
+            maxDrawdown = 0.0
+
+        if avgLoss != 0 and avgWin != 0:
+            p = winRate / 100.0
+            q = lossRate / 100.0
+            b = abs(avgWin) / abs(avgLoss)
+            kellyCriterion = (b * p - q) / b
+        elif numWins > 0 and numLosses == 0:
+            kellyCriterion = 1.0
+        else:
+            kellyCriterion = 0.0
 
         metrics = {
             'strategy_name': self.strategy_name,
             'start_date': self.start_date.isoformat() if self.start_date else None,
             'end_date': self.end_date.isoformat() if self.end_date else None,
-            'initial_cash': initial_cash,
-            'final_value': final_value,
-            'total_return': total_return,
-            'total_return_pct': total_return_pct,
+            'initial_cash': initialCash,
+            'final_value': finalValue,
+            'total_return': totalReturn,
+            'total_return_pct': totalReturnPct,
             'cagr': cagr,
-            'total_trades': total_trades,
-            'num_wins': num_wins,
-            'num_losses': num_losses,
-            'win_rate': win_rate,
-            'loss_rate': loss_rate,
-            'avg_win_pct': avg_win,
-            'avg_loss_pct': avg_loss,
+            'total_trades': totalTrades,
+            'num_wins': numWins,
+            'num_losses': numLosses,
+            'win_rate': winRate,
+            'loss_rate': lossRate,
+            'avg_win_pct': avgWin,
+            'avg_loss_pct': avgLoss,
             'expectancy': expectancy,
-            'sharpe_ratio': sharpe_ratio,
-            'sortino_ratio': sortino_ratio,
-            'max_drawdown': max_drawdown,
-            'kelly_criterion': kelly
+            'sharpe_ratio': float(sharpeRatio),
+            'sortino_ratio': float(sortinoRatio),
+            'max_drawdown': float(maxDrawdown),
+            'kelly_criterion': float(kellyCriterion)
         }
 
         self.results = metrics
@@ -396,14 +463,14 @@ class BacktestEngine:
         print(f"Total Return: ${r['total_return']:,.2f} ({r['total_return_pct']:.2f}%)")
         print(f"Compounding Annualized Return (CAGR): {r['cagr']:.2f}%")
         print(f"\n{'TRADE STATISTICS':-^80}")
-        print(f"Total Number of Orders: {r['total_trades']}")
+        print(f"Total Round-Trip Trades: {r['total_trades']}")
         print(f"Winning Trades: {r['num_wins']}")
         print(f"Losing Trades: {r['num_losses']}")
         print(f"Win Rate: {r['win_rate']:.2f}%")
         print(f"Loss Rate: {r['loss_rate']:.2f}%")
         print(f"Average Win Percentage: {r['avg_win_pct']:.2f}%")
         print(f"Average Loss Percentage: {r['avg_loss_pct']:.2f}%")
-        print(f"Expectancy (100 trades): {r['expectancy']:.2f}%")
+        print(f"Expectancy (geometric): {r['expectancy']:.2f}%")
         print(f"\n{'RISK METRICS':-^80}")
         print(f"Sharpe Ratio: {r['sharpe_ratio']:.3f}")
         print(f"Sortino Ratio: {r['sortino_ratio']:.3f}")

@@ -2,11 +2,17 @@ import requests
 import os
 import logging
 import time
+import threading
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Union, Tuple
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Free tier allows 5 aggregate calls/min; override for a paid key
+DEFAULT_MIN_REQUEST_INTERVAL = 12.5
+_lastRequestTime = 0.0
+_rateLimitLock = threading.Lock()
 
 
 class PolygonClient:
@@ -50,18 +56,17 @@ class PolygonClient:
 
         self.base_url = "https://api.polygon.io"
         self.session = requests.Session()
-        self.last_request_time = 0
-        self.min_request_interval = 0.15  # 150ms between requests (free tier: ~5 req/min)
+        self.min_request_interval = float(os.getenv('POLYGON_MIN_REQUEST_INTERVAL', DEFAULT_MIN_REQUEST_INTERVAL))
 
     def _rate_limit(self):
-        """Ensure we don't exceed API rate limits"""
-        current_time = time.time()
-        time_since_last_request = current_time - self.last_request_time
-        if time_since_last_request < self.min_request_interval:
-            sleep_time = self.min_request_interval - time_since_last_request
-            logger.debug(f"Rate limiting: sleeping for {sleep_time:.3f}s")
-            time.sleep(sleep_time)
-        self.last_request_time = time.time()
+        """Paced process-wide: per-instance pacing does nothing when a client is built per backtest"""
+        global _lastRequestTime
+        with _rateLimitLock:
+            sleepTime = self.min_request_interval - (time.time() - _lastRequestTime)
+            if sleepTime > 0:
+                logger.debug(f"Rate limiting: sleeping for {sleepTime:.3f}s")
+                time.sleep(sleepTime)
+            _lastRequestTime = time.time()
 
     def get_current_price(self, symbol: str) -> Optional[float]:
         """
