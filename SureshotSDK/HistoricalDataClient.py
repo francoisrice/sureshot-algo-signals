@@ -26,9 +26,9 @@ class HistoricalDataClient:
 
     Exposes the same interface as PolygonClient / LondonStrategicEdgeClient so
     it is drop-in interchangeable with either. Historical fetches try London
-    Strategic Edge first, then Polygon; local caches (BacktestingPriceCache,
-    IntradayDataManager) sit above this client, giving backtests and
-    optimization the order: local data -> London Strategic Edge -> Polygon.
+    Strategic Edge first, then Polygon; local caches (BacktestingPriceCache)
+    sit above this client, giving backtests and optimization the order: 
+    local data -> London Strategic Edge -> Polygon.
 
     Historical fetches: disk cache -> London Strategic Edge -> Polygon,
     with fetched bars written back to the cache. Real-time lookups prefer
