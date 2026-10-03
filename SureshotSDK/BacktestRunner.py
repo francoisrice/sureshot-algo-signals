@@ -23,7 +23,7 @@ class BacktestRunner:
         end_date: datetime,
         initial_cash: float = 100000,
         use_cache: bool = True,
-        cache_dir: str = ".backtest_cache"
+        data_root: Optional[str] = None
     ):
         """
         Initialize backtest runner
@@ -33,8 +33,8 @@ class BacktestRunner:
             start_date: Start date for backtest
             end_date: End date for backtest
             initial_cash: Starting cash amount
-            use_cache: Whether to use price data caching
-            cache_dir: Directory for cache files
+            use_cache: Whether to read bars from the shared data store (DATA_ROOT)
+            data_root: Shared data store root; None uses $DATA_ROOT, then ../data
         """
         self.strategy = strategy
         self.start_date = start_date
@@ -46,7 +46,7 @@ class BacktestRunner:
             strategy_name=strategy.name,
             initial_cash=initial_cash,
             use_cache=use_cache,
-            cache_dir=cache_dir
+            data_root=data_root
         )
 
         self.engine.start_date = start_date

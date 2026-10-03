@@ -7,7 +7,6 @@ from typing import Dict, List, Optional, Tuple
 from pathlib import Path
 from .Portfolio import Portfolio
 from .HistoricalDataClient import HistoricalDataClient
-from .BacktestingPriceCache import BacktestingPriceCache, get_shared_cache
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +72,7 @@ class BacktestEngine:
         strategy_name: str,
         initial_cash: float = 100000,
         use_cache: bool = True,
-        cache_dir: str = ".price_cache"
+        data_root: Optional[str] = None
     ):
         """
         Initialize backtest engine
@@ -81,15 +80,14 @@ class BacktestEngine:
         Args:
             strategy_name: Name of the strategy being tested
             initial_cash: Starting cash amount
-            use_cache: Whether to use price data caching
-            cache_dir: Directory for cache files
+            use_cache: Whether to read bars from the shared data store (DATA_ROOT)
+            data_root: Shared data store root; None uses $DATA_ROOT, then ../data
         """
         self.strategy_name = strategy_name
         self.initial_cash = initial_cash
         self.portfolio = Portfolio(cash=initial_cash)
         self.use_cache = use_cache
-        self.price_cache = get_shared_cache(cache_dir) if use_cache else None
-        self.data_client = HistoricalDataClient(price_cache=self.price_cache, cache_dir=cache_dir)
+        self.data_client = HistoricalDataClient(data_root=data_root, use_market_store=use_cache)
 
         # Backtest state
         self.start_date = None
@@ -103,11 +101,6 @@ class BacktestEngine:
 
         logger.info(f"BacktestEngine initialized for '{strategy_name}' with ${initial_cash:,.2f}")
 
-    def _fetch_from_api(self, symbol: str, start_date: datetime, end_date: datetime, timeframe: str) -> List[Dict]:
-        """Fetch price data from the API fallback chain (used as callback for cache)"""
-        logger.info(f"Fetching {symbol} data from {start_date.date()} to {end_date.date()}")
-        return self.data_client.get_historical_data(symbol, start_date, end_date, timeframe)
-
     def get_historical_data(
         self,
         symbol: str,
@@ -115,40 +108,8 @@ class BacktestEngine:
         end_date: datetime,
         timeframe: str = '1d'
     ) -> List[Dict]:
-        """
-        Get historical data with caching support
-
-        Args:
-            symbol: Stock symbol
-            start_date: Start date
-            end_date: End date
-            timeframe: Timeframe
-
-        Returns:
-            List of price data
-        """
-        if self.use_cache and self.price_cache:
-            # Try cache with fetch callback for missing data
-            cached_data = self.price_cache.get(
-                symbol, start_date, end_date, timeframe,
-                fetch_fn=self._fetch_from_api
-            )
-            if cached_data:
-                return cached_data
-
-        if self.price_cache and self.price_cache.fetch_known_empty(symbol, timeframe, start_date, end_date):
-            return []
-
-        # No cache or cache miss - fetch and store
-        data = self._fetch_from_api(symbol, start_date, end_date, timeframe)
-
-        if self.use_cache and self.price_cache:
-            if data:
-                self.price_cache.set(symbol, start_date, end_date, timeframe, data)
-            else:
-                self.price_cache.mark_fetch_empty(symbol, timeframe, start_date, end_date)
-
-        return data
+        """Split-adjusted bars from the shared data store, filling gaps from the providers"""
+        return self.data_client.get_historical_data(symbol, start_date, end_date, timeframe)
 
     def execute_buy(self, date: datetime, symbol: str, price: float) -> Optional[Trade]:
         """

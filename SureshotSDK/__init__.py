@@ -12,7 +12,7 @@ from .HistoricalDataClient import HistoricalDataClient
 from .ibkr.automation import IBKRClient
 from .BacktestEngine import BacktestEngine, Trade
 from .BacktestRunner import BacktestRunner
-from .BacktestingPriceCache import BacktestingPriceCache
+from .MarketDataStore import MarketDataStore, get_shared_store
 
 # Vault client is optional - only import if running in a cluster with Vault for secrets management
 try:
@@ -23,7 +23,7 @@ try:
         'PolygonClient', 'LondonStrategicEdgeClient', 'HistoricalDataClient',
         'VaultClient', 'DataFetcherClient',
         'get_secret_from_vault', 'get_polygon_api_key_from_vault', 'IBKRClient',
-        'BacktestEngine', 'BacktestRunner', 'BacktestingPriceCache', 'Trade'
+        'BacktestEngine', 'BacktestRunner', 'MarketDataStore', 'get_shared_store', 'Trade'
     ]
 except ImportError:
     __all__ = [
@@ -31,5 +31,5 @@ except ImportError:
         'get_system_time', 'format_price', 'is_market_open',
         'PolygonClient', 'LondonStrategicEdgeClient', 'HistoricalDataClient',
         'DataFetcherClient', 'IBKRClient',
-        'BacktestEngine', 'BacktestRunner', 'BacktestingPriceCache', 'Trade'
+        'BacktestEngine', 'BacktestRunner', 'MarketDataStore', 'get_shared_store', 'Trade'
     ]

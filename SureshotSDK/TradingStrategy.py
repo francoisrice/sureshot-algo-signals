@@ -17,7 +17,7 @@ class TradingStrategy:
         self.portfolio = portfolio
         self.start_date = None
         self.end_date = None
-        self.data_client = HistoricalDataClient() if (os.getenv("POLYGON_API_KEY") or os.getenv("LONDONSTRATEGICEDGE_API_KEY")) else None
+        self.data_client = HistoricalDataClient() if os.getenv("POLYGON_API_KEY") else None
         self._data_fetcher = None 
         self.logger = logging.getLogger(__name__)
         self.strategy_name = strategy_name or getattr(self, 'name', None)

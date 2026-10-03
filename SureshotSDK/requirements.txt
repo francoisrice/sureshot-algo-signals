@@ -10,6 +10,9 @@ pytz>=2023.3
 # Numerical computing (used by BacktestEngine)
 numpy>=1.26.0
 
+# Shared market data store (MarketDataStore reads/writes Parquet at DATA_ROOT)
+duckdb>=1.1
+
 # Type hints
 typing-extensions>=4.8.0
 

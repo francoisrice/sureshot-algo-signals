@@ -50,7 +50,7 @@ class TradeRequest(BaseModel):
     strategy_name: str = Field(..., description="Strategy identifier")
     symbol: str = Field(..., description="Trading symbol")
     price: float = Field(..., gt=0, description="Current market price")
-    quantity: Optional[int] = Field(None, description="Strategy Override for shares to buy")
+    quantity: Optional[int] = Field(None, description="Strategy override for shares to trade; on closes, a partial quantity (default closes the whole position)")
 
 
 class TradeResponse(BaseModel):

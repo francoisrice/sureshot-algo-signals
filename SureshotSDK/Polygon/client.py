@@ -273,7 +273,49 @@ class PolygonClient:
         Returns:
             List of OHLCV data points
         """
-        # Map timeframe to Polygon multiplier and timespan
+        return self._get_aggregates(symbol, start_date, end_date, timeframe, adjusted=True)
+
+    def get_unadjusted_historical_data(self,
+                                       symbol: str,
+                                       start_date: datetime,
+                                       end_date: datetime,
+                                       timeframe: str = '1d') -> List[Dict]:
+        """Raw prices as traded; MarketDataStore stores these and split-adjusts on read"""
+        return self._get_aggregates(symbol, start_date, end_date, timeframe, adjusted=False)
+
+    def _get_json(self, url: str, params: Optional[Dict]) -> Dict:
+        """GET with one retry on HTTP 429; raises requests.RequestException on failure"""
+        try:
+            self._rate_limit()
+            response = self.session.get(url, params=params)
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            if '429' not in str(e):
+                raise
+            logger.warning("Rate limit hit, waiting 12 seconds before retry...")
+            time.sleep(12)
+            response = self.session.get(url, params=params)
+            response.raise_for_status()
+            return response.json()
+
+    def _get_paginated_results(self, url: str, params: Dict) -> List[Dict]:
+        """Follows next_url: a single page caps at 50000 rows, which silently truncated long 1m ranges"""
+        results = []
+        data = self._get_json(url, params)
+        while True:
+            results.extend(data.get('results') or [])
+            nextUrl = data.get('next_url')
+            if not nextUrl:
+                return results
+            data = self._get_json(nextUrl, {'apikey': self.api_key})
+
+    def _get_aggregates(self,
+                        symbol: str,
+                        start_date: datetime,
+                        end_date: datetime,
+                        timeframe: str,
+                        adjusted: bool) -> List[Dict]:
         timeframe_map = {
             '1d': (1, 'day'),
             '1h': (1, 'hour'),
@@ -282,50 +324,51 @@ class PolygonClient:
             '30m': (30, 'minute'),
             '1m': (1, 'minute')
         }
-
         multiplier, timespan = timeframe_map.get(timeframe, (1, 'day'))
 
-        # Format dates for Polygon API
         start_str = str(int(start_date.timestamp()))
         end_str = str(int(end_date.timestamp()))
-
-        # Construct Polygon API URL
         url = f"{self.base_url}/v2/aggs/ticker/{symbol}/range/{multiplier}/{timespan}/{start_str}/{end_str}"
-
         params = {
-            'adjusted': 'true',
+            'adjusted': 'true' if adjusted else 'false',
             'sort': 'asc',
             'limit': 50000,
             'apikey': self.api_key
         }
 
         try:
-            self._rate_limit()
-            response = self.session.get(url, params=params)
-            response.raise_for_status()
-
-            data = response.json()
-
-            if 'results' in data:
-                return data['results']
-            else:
-                logger.debug(f"Polygon API response: {data}")
-                return []
-
+            return self._get_paginated_results(url, params)
         except requests.RequestException as e:
             logger.error(f"Error fetching historical data from Polygon: {e}")
-            # If rate limited, wait longer and retry once
-            if '429' in str(e):
-                logger.warning("Rate limit hit, waiting 12 seconds before retry...")
-                time.sleep(12)
-                try:
-                    response = self.session.get(url, params=params)
-                    response.raise_for_status()
-                    data = response.json()
-                    if 'results' in data:
-                        return data['results']
-                except:
-                    pass
+            return []
+
+    def get_unadjusted_grouped_daily(self, session_date: datetime) -> Optional[List[Dict]]:
+        """Every US ticker's raw daily bar for one session ('T' = ticker); [] for a market
+        holiday, None when the request failed, so callers can tell the two apart"""
+        url = f"{self.base_url}/v2/aggs/grouped/locale/us/market/stocks/{session_date.strftime('%Y-%m-%d')}"
+        params = {'adjusted': 'false', 'apikey': self.api_key}
+        try:
+            data = self._get_json(url, params)
+        except requests.RequestException as e:
+            logger.error(f"Error fetching grouped daily bars from Polygon: {e}")
+            return None
+        if data.get('status') not in ('OK', 'DELAYED'):
+            logger.error(f"Polygon grouped daily returned status {data.get('status')}: {data.get('message')}")
+            return None
+        return data.get('results') or []
+
+    def get_splits(self, execution_date_gte: datetime) -> List[Dict]:
+        """Market-wide split events on or after a date: [{'ticker','execution_date','split_from','split_to'}]"""
+        url = f"{self.base_url}/v3/reference/splits"
+        params = {
+            'execution_date.gte': execution_date_gte.strftime('%Y-%m-%d'),
+            'limit': 1000,
+            'apikey': self.api_key
+        }
+        try:
+            return self._get_paginated_results(url, params)
+        except requests.RequestException as e:
+            logger.error(f"Error fetching splits from Polygon: {e}")
             return []
 
     def get_ohlcv_data(self,
