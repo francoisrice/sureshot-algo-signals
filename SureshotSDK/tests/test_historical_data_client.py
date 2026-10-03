@@ -1,20 +1,26 @@
 """
-Tests for HistoricalDataClient: cache -> London Strategic Edge -> Polygon
-fallback ordering, cache persistence regardless of provider, and
-PolygonClient interface parity.
+Tests for HistoricalDataClient: Polygon-only reads without a data store,
+MarketDataStore-backed reads and Polygon gap fills with one, and PolygonClient
+interface parity.
 """
 
+import importlib
 import inspect
-import pytest
-from unittest.mock import Mock, patch
-from datetime import datetime
-import sys
 import os
+import sys
+from datetime import date, datetime
+from unittest.mock import Mock, patch
+
+import duckdb
+import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 from SureshotSDK.HistoricalDataClient import HistoricalDataClient
 from SureshotSDK.Polygon.client import PolygonClient
+from .conftest import epoch_ms
+
+historicalModule = importlib.import_module('SureshotSDK.HistoricalDataClient')
 
 START = datetime(2026, 7, 1)
 END = datetime(2026, 7, 10)
@@ -25,141 +31,126 @@ BARS = [
 ]
 
 
-def make_client(tmp_path, lse_bars=None, polygon_bars=None, lse=True, polygon=True):
-    lseClient = Mock()
+def grouped_day(sessionDate: date, closesByTicker: dict):
+    return [
+        {'T': ticker, 't': epoch_ms(sessionDate, 16), 'o': close, 'h': close, 'l': close, 'c': close, 'v': 100, 'n': 1}
+        for ticker, close in closesByTicker.items()
+    ]
+
+
+def make_client(data_root, polygon_bars=None, grouped=None, polygon=True):
+    """A data_root without parquet/ gives the store-less path used by live pods"""
     polygonClient = Mock()
-    lseClient.get_historical_data.return_value = lse_bars if lse_bars is not None else []
     polygonClient.get_historical_data.return_value = polygon_bars if polygon_bars is not None else []
-    client = HistoricalDataClient(
-        lse_client=lseClient if lse else Mock(),
-        polygon_client=polygonClient if polygon else Mock(),
-        cache_dir=str(tmp_path)
-    )
-    if not lse:
-        client.lse_client = None
+    polygonClient.get_unadjusted_historical_data.return_value = polygon_bars if polygon_bars is not None else []
+    polygonClient.get_unadjusted_grouped_daily.side_effect = grouped or (lambda sessionDate: [])
+    polygonClient.get_splits.return_value = []
+    client = HistoricalDataClient(polygon_client=polygonClient if polygon else None, data_root=str(data_root))
     if not polygon:
         client.polygon_client = None
-    return client, lseClient, polygonClient
+    return client, polygonClient
+
+
+@pytest.fixture(autouse=True)
+def reset_splits_refresh(monkeypatch):
+    monkeypatch.setattr(historicalModule, '_splitsRefreshAttempted', False)
 
 
 class TestInitialization:
 
     @patch.dict(os.environ, {}, clear=True)
-    def test_no_keys_raises_error(self, tmp_path):
-        with pytest.raises(ValueError, match="No market data API key found"):
-            HistoricalDataClient(cache_dir=str(tmp_path))
-
-    @patch.dict(os.environ, {'LONDONSTRATEGICEDGE_API_KEY': 'lse_key'}, clear=True)
-    def test_lse_key_alone_is_sufficient(self, tmp_path):
-        client = HistoricalDataClient(cache_dir=str(tmp_path))
-        assert client.lse_client is not None
-        assert client.polygon_client is None
+    def test_no_source_raises_error(self, tmp_path):
+        with pytest.raises(ValueError, match="No market data source found"):
+            HistoricalDataClient(data_root=str(tmp_path))
 
     @patch.dict(os.environ, {'POLYGON_API_KEY': 'poly_key'}, clear=True)
     def test_polygon_key_alone_is_sufficient(self, tmp_path):
-        client = HistoricalDataClient(cache_dir=str(tmp_path))
+        client = HistoricalDataClient(data_root=str(tmp_path))
         assert client.polygon_client is not None
-        assert client.lse_client is None
+        assert client.market_store is None
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_data_store_alone_is_sufficient(self, market_archive):
+        client = HistoricalDataClient(data_root=str(market_archive))
+        assert client.polygon_client is None
+        assert [b['c'] for b in client.get_historical_data('SPY', START, END, '1d')] == [100, 101, 102, 103]
+
+    @patch.dict(os.environ, {'LONDONSTRATEGICEDGE_API_KEY': 'lse_key'}, clear=True)
+    def test_lse_key_is_not_a_source(self, tmp_path):
+        with pytest.raises(ValueError, match="No market data source found"):
+            HistoricalDataClient(data_root=str(tmp_path))
 
 
-class TestFallbackOrdering:
+class TestWithoutDataStore:
 
-    def test_lse_preferred_for_historical_data(self, tmp_path):
-        client, lse, polygon = make_client(tmp_path, lse_bars=BARS)
-        data = client.get_historical_data('SPY', START, END, '1d')
-        assert data == BARS
-        lse.get_historical_data.assert_called_once()
-        polygon.get_historical_data.assert_not_called()
-
-    def test_falls_back_to_polygon_when_lse_empty(self, tmp_path):
-        client, lse, polygon = make_client(tmp_path, lse_bars=[], polygon_bars=BARS)
-        data = client.get_historical_data('SPY', START, END, '1d')
-        assert data == BARS
-        lse.get_historical_data.assert_called_once()
+    def test_bars_come_from_polygon_adjusted(self, tmp_path):
+        client, polygon = make_client(tmp_path, polygon_bars=BARS)
+        assert client.get_historical_data('SPY', START, END, '1d') == BARS
         polygon.get_historical_data.assert_called_once()
+        polygon.get_unadjusted_historical_data.assert_not_called()
 
-    def test_falls_back_to_polygon_when_lse_raises(self, tmp_path):
-        client, lse, polygon = make_client(tmp_path, polygon_bars=BARS)
-        lse.get_historical_data.side_effect = RuntimeError("LSE down")
-        data = client.get_historical_data('SPY', START, END, '1d')
-        assert data == BARS
-
-    def test_returns_empty_when_all_providers_fail(self, tmp_path):
-        client, lse, polygon = make_client(tmp_path)
-        lse.get_historical_data.side_effect = RuntimeError("down")
+    def test_returns_empty_when_polygon_fails(self, tmp_path):
+        client, polygon = make_client(tmp_path)
         polygon.get_historical_data.side_effect = RuntimeError("down")
         assert client.get_historical_data('SPY', START, END, '1d') == []
 
-    def test_polygon_preferred_for_current_price(self, tmp_path):
-        client, lse, polygon = make_client(tmp_path)
+    def test_current_price_from_polygon(self, tmp_path):
+        client, polygon = make_client(tmp_path)
         polygon.get_current_price.return_value = 100.5
         assert client.get_current_price('SPY') == 100.5
-        polygon.get_current_price.assert_called_once()
-        lse.get_current_price.assert_not_called()
-
-    def test_current_price_falls_back_to_lse(self, tmp_path):
-        client, lse, polygon = make_client(tmp_path)
-        polygon.get_current_price.return_value = None
-        lse.get_current_price.return_value = 99.5
-        assert client.get_current_price('SPY') == 99.5
 
 
-class TestCachePersistence:
-    """Fetched bars must be stored on disk for subsequent runs, no matter
-    which provider served them"""
+def stored_market_rows(data_root):
+    return duckdb.sql(
+        f"SELECT ticker, close, source FROM '{data_root}/supplement/bars/timeframe=1d/*.parquet' ORDER BY ALL"
+    ).fetchall()
 
-    def test_lse_fetch_is_written_to_cache(self, tmp_path):
-        client, _, _ = make_client(tmp_path, lse_bars=BARS)
-        client.get_historical_data('SPY', START, END, '1d')
-        assert os.listdir(tmp_path) == ['SPY_1d_20260701_20260710.json']
 
-    def test_polygon_fetch_is_written_to_cache(self, tmp_path):
-        client, _, _ = make_client(tmp_path, polygon_bars=BARS)
-        client.get_historical_data('SPY', START, END, '1d')
-        assert os.listdir(tmp_path) == ['SPY_1d_20260701_20260710.json']
+class TestWithDataStore:
 
-    def test_cached_data_served_without_provider_calls(self, tmp_path):
-        first, _, _ = make_client(tmp_path, lse_bars=BARS)
-        fetched = first.get_historical_data('SPY', START, END, '1d')
-
-        second, lse, polygon = make_client(tmp_path)
-        cached = second.get_historical_data('SPY', START, END, '1d')
-
-        assert cached == fetched
-        lse.get_historical_data.assert_not_called()
+    def test_archive_bars_served_without_polygon_calls(self, market_archive):
+        client, polygon = make_client(market_archive)
+        data = client.get_historical_data('SPY', START, datetime(2026, 7, 7), '1d')
+        assert [b['c'] for b in data] == [100, 101, 102, 103]
+        polygon.get_unadjusted_grouped_daily.assert_not_called()
         polygon.get_historical_data.assert_not_called()
 
-    def test_range_extension_is_fetched_and_persisted(self, tmp_path):
-        first, _, _ = make_client(tmp_path, lse_bars=BARS)
-        first.get_historical_data('SPY', START, END, '1d')
+    def test_daily_gap_filled_from_grouped_polygon_bars(self, market_archive):
+        client, polygon = make_client(market_archive, grouped=lambda d: grouped_day(d, {'SPY': 104.0, 'ABC': 60.0}))
+        data = client.get_historical_data('SPY', START, END, '1d')
+        assert [b['c'] for b in data][-3:] == [104, 104, 104]
+        assert polygon.get_unadjusted_grouped_daily.call_count == 3
+        polygon.get_historical_data.assert_not_called()
+        assert ('ABC', 60.0, 'polygon') in stored_market_rows(market_archive)
 
-        extensionBars = [
-            {'t': int(datetime(2026, 7, 14).timestamp() * 1000), 'o': 2.0, 'h': 3.0, 'l': 1.5, 'c': 2.5, 'v': 300},
-        ]
-        second, lse, _ = make_client(tmp_path, lse_bars=extensionBars)
-        data = second.get_historical_data('SPY', START, datetime(2026, 7, 15), '1d')
+    def test_minute_gap_filled_from_unadjusted_polygon_bars(self, market_archive):
+        minuteBar = {'t': epoch_ms(date(2026, 7, 2), 9, 30), 'o': 1.0, 'h': 1.0, 'l': 1.0, 'c': 1.0, 'v': 1, 'n': 1}
+        client, polygon = make_client(market_archive, polygon_bars=[minuteBar])
+        client.get_historical_data('SPY', datetime(2026, 7, 2), datetime(2026, 7, 2, 23, 59), '1min')
+        polygon.get_unadjusted_historical_data.assert_called_once()
+        assert polygon.get_unadjusted_historical_data.call_args[0][3] == '1m'
+        assert os.listdir(market_archive / 'supplement' / 'bars') == ['timeframe=1m']
 
-        assert len(data) == len(BARS) + 1
-        lse.get_historical_data.assert_called_once()
-        assert os.listdir(tmp_path) == ['SPY_1d_20260701_20260715.json']
+    def test_splits_refreshed_before_gap_fill(self, market_archive):
+        client, polygon = make_client(market_archive, grouped=lambda d: [])
+        client.get_historical_data('SPY', START, END, '1d')
+        polygon.get_splits.assert_called_once()
 
-    def test_empty_fetch_writes_nothing(self, tmp_path):
-        client, _, _ = make_client(tmp_path)
-        assert client.get_historical_data('SPY', START, END, '1d') == []
-        assert os.listdir(tmp_path) == []
+    def test_without_polygon_only_the_archive_is_served(self, market_archive):
+        client, _ = make_client(market_archive, polygon=False)
+        data = client.get_historical_data('SPY', START, END, '1d')
+        assert [b['c'] for b in data] == [100, 101, 102, 103]
+        assert not (market_archive / 'supplement').exists()
 
+    def test_historical_price_read_from_store(self, market_archive):
+        client, polygon = make_client(market_archive)
+        assert client.get_historical_price('SPY', datetime(2026, 7, 1, 9, 35), '1m') == 105.25
+        polygon.get_historical_price.assert_not_called()
 
-class TestTimeframeNormalization:
-
-    def test_1min_alias_normalized_before_provider_call(self, tmp_path):
-        client, lse, _ = make_client(tmp_path, lse_bars=BARS)
-        client.get_historical_data('SPY', START, END, '1min')
-        assert lse.get_historical_data.call_args[0][3] == '1m'
-
-    def test_1min_and_1m_share_one_cache_entry(self, tmp_path):
-        client, _, _ = make_client(tmp_path, lse_bars=BARS)
-        client.get_historical_data('SPY', START, END, '1min')
-        assert os.listdir(tmp_path) == ['SPY_1m_20260701_20260710.json']
+    def test_single_day_price_read_from_store(self, market_archive):
+        client, polygon = make_client(market_archive)
+        assert client.get_single_day_price('SPY', datetime(2026, 7, 6)) == 102
+        polygon.get_single_day_price.assert_not_called()
 
 
 class TestPolygonInterfaceParity:
@@ -176,8 +167,8 @@ class TestPolygonInterfaceParity:
         wrapperParams = list(inspect.signature(getattr(HistoricalDataClient, method_name)).parameters)
         assert wrapperParams == polygonParams
 
-    def test_get_close_prices_and_ohlcv_derive_from_cached_data(self, tmp_path):
-        client, _, _ = make_client(tmp_path, lse_bars=BARS)
+    def test_get_close_prices_and_ohlcv_derive_from_historical_data(self, tmp_path):
+        client, _ = make_client(tmp_path, polygon_bars=BARS)
         assert client.get_close_prices('SPY', START, END, '1d') == [1.5, 2.0]
         ohlcv = client.get_ohlcv_data('SPY', START, END, '1d')
         assert ohlcv[0][4] == 1.5

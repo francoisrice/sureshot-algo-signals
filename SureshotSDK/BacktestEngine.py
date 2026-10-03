@@ -3,7 +3,7 @@ import json
 import numpy as np
 import requests
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from pathlib import Path
 from .Portfolio import Portfolio
 from .HistoricalDataClient import HistoricalDataClient
@@ -14,12 +14,31 @@ TRADING_DAYS_PER_YEAR = 252
 # Caps Sharpe/Sortino when there is no downside volatility; inf breaks JSON and optimizers
 MAX_RISK_ADJUSTED_RATIO = 10.0
 
+# Stands in for the undefined f* of a zero-variance series; not a cap on real values
+KELLY_ZERO_VARIANCE_LEVERAGE = 100.0
+
 
 def annualized_ratio(mean_return: float, deviation: float) -> float:
     if deviation <= 0:
         return MAX_RISK_ADJUSTED_RATIO if mean_return > 0 else 0.0
     ratio = (mean_return / deviation) * np.sqrt(TRADING_DAYS_PER_YEAR)
     return float(np.clip(ratio, -MAX_RISK_ADJUSTED_RATIO, MAX_RISK_ADJUSTED_RATIO))
+
+
+def kelly_from_daily_returns(returns: Optional[List[float]]) -> float:
+    """Optimal leverage f* = mean/variance; scale-free, so daily and annual returns agree"""
+    if not returns or len(returns) < 2:
+        return 0.0
+
+    meanReturn = float(np.mean(returns))
+    variance = float(np.var(returns, ddof=1))
+
+    if variance <= 0:
+        if meanReturn == 0:
+            return 0.0
+        return KELLY_ZERO_VARIANCE_LEVERAGE if meanReturn > 0 else -KELLY_ZERO_VARIANCE_LEVERAGE
+
+    return meanReturn / variance
 
 
 def downside_deviation(returns: List[float]) -> float:
@@ -36,6 +55,55 @@ def geometric_expectancy_pct(trade_return_pcts: List[float]) -> float:
         return -100.0
     compounded = float(np.prod(growthFactors))
     return (compounded ** (1.0 / len(growthFactors)) - 1.0) * 100.0
+
+
+def group_legs_into_positions(leg_trades: List[Dict]) -> List[Dict]:
+    """Collapse simultaneously-opened legs into one round trip; per-leg percentages don't net out"""
+    if not leg_trades:
+        return []
+
+    # Without order ids there is nothing to pair on, so each round trip stands alone
+    unpaired = [leg for leg in leg_trades if leg.get('open_order_id') is None]
+    positions = [_position_from_legs([leg]) for leg in unpaired]
+
+    legsByOpen: Dict[Any, List[Dict]] = {}
+    for leg in leg_trades:
+        openId = leg.get('open_order_id')
+        if openId is not None:
+            legsByOpen.setdefault(openId, []).append(leg)
+
+    currentLegs: List[Dict] = []
+    previousId = None
+    for openId in sorted(legsByOpen.keys()):
+        if currentLegs and openId - previousId != 1:
+            positions.append(_position_from_legs(currentLegs))
+            currentLegs = []
+        currentLegs.extend(legsByOpen[openId])
+        previousId = openId
+
+    if currentLegs:
+        positions.append(_position_from_legs(currentLegs))
+
+    return positions
+
+
+def _position_from_legs(legs: List[Dict]) -> Dict:
+    totalPnl = sum(leg['pnl'] for leg in legs)
+    capitalDeployed = sum(
+        abs(leg.get('entry_price', 0.0) * leg.get('quantity', 0.0)) for leg in legs
+    )
+    if capitalDeployed > 0:
+        pnlPct = totalPnl / capitalDeployed * 100.0
+    else:
+        # Engine-recorded trades carry no prices; their own percentage is already position-level
+        pnlPct = float(np.mean([leg.get('pnl_pct', 0.0) for leg in legs]))
+    return {
+        'symbols': sorted({leg['symbol'] for leg in legs}),
+        'legs': len(legs),
+        'pnl': totalPnl,
+        'pnl_pct': pnlPct,
+        'capital_deployed': capitalDeployed
+    }
 
 
 def max_drawdown_pct(equity_values: List[float], starting_equity: float) -> float:
@@ -273,11 +341,11 @@ class BacktestEngine:
 
                     if not openLots:
                         side = 'SHORT' if orderSide in ('SHORT', 'SELL') and orderType == 'SELL' else 'LONG'
-                        openLots.append({'qty': absQty, 'price': orderPrice, 'side': side})
+                        openLots.append({'qty': absQty, 'price': orderPrice, 'side': side, 'orderId': order['id']})
                         continue
 
                     currSide = openLots[0]['side']
-                    isClosing = (currSide == 'LONG' and orderSide in ('SELL', 'SHORT') and orderType == 'SELL') or                                 (currSide == 'SHORT' and orderSide in ('COVER', 'LONG') and orderType == 'BUY')
+                    isClosing = (currSide == 'LONG' and orderSide in ('SELL', 'SHORT') and orderType == 'SELL') or (currSide == 'SHORT' and orderSide in ('COVER', 'LONG') and orderType == 'BUY')
 
                     if isClosing:
                         remainingCloseQty = absQty
@@ -300,7 +368,9 @@ class BacktestEngine:
                                 'entry_price': entryPrice,
                                 'exit_price': orderPrice,
                                 'pnl': pnl,
-                                'pnl_pct': pnlPct
+                                'pnl_pct': pnlPct,
+                                'open_order_id': lot['orderId'],
+                                'close_order_id': order['id']
                             })
 
                             lot['qty'] -= matchedQty
@@ -310,9 +380,9 @@ class BacktestEngine:
 
                         if remainingCloseQty > 1e-6:
                             newSide = 'SHORT' if currSide == 'LONG' else 'LONG'
-                            openLots.append({'qty': remainingCloseQty, 'price': orderPrice, 'side': newSide})
+                            openLots.append({'qty': remainingCloseQty, 'price': orderPrice, 'side': newSide, 'orderId': order['id']})
                     else:
-                        openLots.append({'qty': absQty, 'price': orderPrice, 'side': currSide})
+                        openLots.append({'qty': absQty, 'price': orderPrice, 'side': currSide, 'orderId': order['id']})
         elif self.trades:
             for t in self.trades:
                 if hasattr(t, 'pnl') and t.pnl is not None:
@@ -322,9 +392,12 @@ class BacktestEngine:
                         'pnl_pct': getattr(t, 'pnl_percent', 0.0)
                     })
 
-        winningTrades = [rt for rt in trades if rt['pnl'] > 0]
-        losingTrades = [rt for rt in trades if rt['pnl'] < 0]
-        totalTrades = len(trades)
+        # A hedged pair is one bet, not one trade per leg; counting legs forces a 50% win rate
+        positions = group_legs_into_positions(trades)
+
+        winningTrades = [rt for rt in positions if rt['pnl'] > 0]
+        losingTrades = [rt for rt in positions if rt['pnl'] < 0]
+        totalTrades = len(positions)
 
         numWins = len(winningTrades)
         numLosses = len(losingTrades)
@@ -334,7 +407,7 @@ class BacktestEngine:
         avgWin = float(np.mean([rt['pnl_pct'] for rt in winningTrades])) if winningTrades else 0.0
         avgLoss = float(np.mean([rt['pnl_pct'] for rt in losingTrades])) if losingTrades else 0.0
 
-        expectancy = geometric_expectancy_pct([rt['pnl_pct'] for rt in trades])
+        expectancy = geometric_expectancy_pct([rt['pnl_pct'] for rt in positions])
 
         if self.start_date and self.end_date:
             days = (self.end_date - self.start_date).days
@@ -370,15 +443,8 @@ class BacktestEngine:
         else:
             maxDrawdown = 0.0
 
-        if avgLoss != 0 and avgWin != 0:
-            p = winRate / 100.0
-            q = lossRate / 100.0
-            b = abs(avgWin) / abs(avgLoss)
-            kellyCriterion = (b * p - q) / b
-        elif numWins > 0 and numLosses == 0:
-            kellyCriterion = 1.0
-        else:
-            kellyCriterion = 0.0
+        # Daily returns, not round trips: a strategy holding one position all window has n=1 trades
+        kellyCriterion = kelly_from_daily_returns(self.daily_returns)
 
         metrics = {
             'strategy_name': self.strategy_name,
@@ -436,7 +502,7 @@ class BacktestEngine:
         print(f"Sharpe Ratio: {r['sharpe_ratio']:.3f}")
         print(f"Sortino Ratio: {r['sortino_ratio']:.3f}")
         print(f"Maximum Drawdown: {r['max_drawdown']:.2f}%")
-        print(f"Kelly Criterion: {r['kelly_criterion']:.3f}")
+        print(f"Kelly Leverage (f*): {r['kelly_criterion']:.3f}")
         print("=" * 80 + "\n")
 
     def save_results(self, output_dir: str = "backtest_results"):

@@ -62,15 +62,8 @@ def default_objective(metrics: Dict) -> float:
     cagr = metrics.get('cagr', 0)
     kelly = metrics.get('kelly_criterion', 0)
 
-    # Handle edge cases
-    if sortino == float('inf'):
-        sortino = 10  # Cap infinite sortino
-    if sortino < 0:
-        sortino = 0
-    if kelly < 0:
-        kelly = 0
-
-    return sortino * cagr * kelly
+    # CAGR alone carries the sign; sortino and kelly scale magnitude without flipping it
+    return abs(sortino) * abs(kelly) * cagr
 
 
 # Set the objective function (can be overridden)

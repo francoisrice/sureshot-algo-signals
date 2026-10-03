@@ -28,22 +28,25 @@ from SureshotSDK import BacktestRunner
 # Portfolio and strategy selection
 PORTFOLIO = "portfolio_multi_strategy"
 # STRATEGY = "IncredibleLeverage_SPXL"  # Options: IncredibleLeverage_SPXL, ORB_SPY, NakedWheel_SPY
-STRATEGY = "ORB_HighVolume"  # Options: IncredibleLeverage_SPXL, ORB_SPY, NakedWheel_SPY
+# STRATEGY = "ORB_Aziz_TQQQ"  # Options: IncredibleLeverage_SPXL, ORB_SPY, NakedWheel_SPY
+# STRATEGY = "ORB_Hydra"
+STRATEGY = "SiegeEngine"
 
 # Backtest date range
 # START_DATE = datetime(2023, 6, 1)
 # START_DATE = datetime(2025, 12, 1)
 # END_DATE = datetime(2025, 12, 31)
 
-START_DATE = datetime(2025, 5, 1)
-END_DATE = datetime(2025, 9, 30)
+START_DATE = datetime(2026, 3, 1)
+END_DATE = datetime(2026, 9, 28)
 
 # Initial capital
 INITIAL_CASH = 100000
 
-# Cache settings
-USE_CACHE = True
-CACHE_DIR = ".backtest_cache"
+# Market data: the shared store at DATA_ROOT (None uses $DATA_ROOT, then ../data)
+# USE_CACHE = True
+USE_CACHE = False
+DATA_ROOT = None
 
 # Logging level
 LOG_LEVEL = logging.INFO
@@ -138,7 +141,7 @@ async def run_backtest():
             end_date=END_DATE,
             initial_cash=INITIAL_CASH,
             use_cache=USE_CACHE,
-            cache_dir=CACHE_DIR
+            data_root=DATA_ROOT
         )
 
         # Initialize for backtesting (now that portfolio is set)
