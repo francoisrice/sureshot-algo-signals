@@ -10,6 +10,8 @@ from .Polygon import PolygonClient
 from .LondonStrategicEdge import LondonStrategicEdgeClient
 from .HistoricalDataClient import HistoricalDataClient
 from .ibkr.automation import IBKRClient
+from .tastytrade import TastytradeClient
+from .alpaca import AlpacaDataClient
 from .BacktestEngine import BacktestEngine, Trade
 from .BacktestRunner import BacktestRunner
 from .MarketDataStore import MarketDataStore, get_shared_store
@@ -22,7 +24,7 @@ try:
         'get_system_time', 'format_price', 'is_market_open',
         'PolygonClient', 'LondonStrategicEdgeClient', 'HistoricalDataClient',
         'VaultClient', 'DataFetcherClient',
-        'get_secret_from_vault', 'get_polygon_api_key_from_vault', 'IBKRClient',
+        'get_secret_from_vault', 'get_polygon_api_key_from_vault', 'IBKRClient', 'TastytradeClient', 'AlpacaDataClient',
         'BacktestEngine', 'BacktestRunner', 'MarketDataStore', 'get_shared_store', 'Trade'
     ]
 except ImportError:
@@ -30,6 +32,6 @@ except ImportError:
         'TradingStrategy', 'ATR', 'SMA', 'EMA', 'BollingerBand', 'Portfolio',
         'get_system_time', 'format_price', 'is_market_open',
         'PolygonClient', 'LondonStrategicEdgeClient', 'HistoricalDataClient',
-        'DataFetcherClient', 'IBKRClient',
+        'DataFetcherClient', 'IBKRClient', 'TastytradeClient', 'AlpacaDataClient',
         'BacktestEngine', 'BacktestRunner', 'MarketDataStore', 'get_shared_store', 'Trade'
     ]

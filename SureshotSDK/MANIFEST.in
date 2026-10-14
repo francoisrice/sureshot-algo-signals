@@ -1,0 +1,12 @@
+include README.md pyproject.toml
+prune ibkr/build
+prune ibkr/dist
+prune ibkr/logs
+prune ibkr/root
+prune ibkr/doc
+prune ibkr/bin
+prune tests
+prune helpers
+prune .pytest_cache
+prune SureshotSDK.egg-info
+global-exclude *.zip *.jar *.log *.jks *.pyc __pycache__

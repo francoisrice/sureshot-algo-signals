@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "SureshotSDK"
+version = "0.2.0"
+description = "Shared SDK for Sureshot algorithmic trading strategies: strategy base classes, indicators, backtesting, market data and broker clients"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "LicenseRef-Proprietary"
+authors = [{ name = "Sureshot Capital" }]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
+dependencies = [
+    "requests>=2.31.0",
+    "urllib3>=1.26.0",
+    "pytz>=2023.3",
+    "numpy>=1.26.0",
+    "duckdb>=1.1",
+    "typing-extensions>=4.8.0",
+]
+
+[project.optional-dependencies]
+ibkr = ["playwright>=1.40.0", "pyotp>=2.8.0"]
+datafetcher = ["stagehand>=0.1.0", "fastapi>=0.104.0", "uvicorn[standard]>=0.24.0"]
+vault = ["hvac>=1.2.0"]
+options = ["scipy>=1.11"]
+all = ["SureshotSDK[ibkr,datafetcher,vault,options]"]
+test = ["pytest>=7"]
+
+[tool.setuptools]
+package-dir = { "SureshotSDK" = "." }
+packages = [
+    "SureshotSDK",
+    "SureshotSDK.alpaca",
+    "SureshotSDK.DataFetcher",
+    "SureshotSDK.ibkr",
+    "SureshotSDK.ibkr.automation",
+    "SureshotSDK.LondonStrategicEdge",
+    "SureshotSDK.optimization",
+    "SureshotSDK.options",
+    "SureshotSDK.Polygon",
+    "SureshotSDK.tastytrade",
+]
+include-package-data = false

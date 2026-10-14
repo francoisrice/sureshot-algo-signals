@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "SureshotSDK"
+version = "0.0.2"
+description = "Sureshot Capital trading SDK"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "LicenseRef-Proprietary"
+authors = [{ name = "Sureshot Capital" }]
+classifiers = [
+    "Development Status :: 7 - Inactive",
+    "Programming Language :: Python :: 3",
+]
+
+[tool.setuptools]
+packages = ["SureshotSDK"]
