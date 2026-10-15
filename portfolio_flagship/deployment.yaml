@@ -1,0 +1,171 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flagship-portfolio
+  namespace: trading
+spec:
+  replicas: 0              # Starts at 0 — CronJob scales to 1 at market open
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: flagship
+  template:
+    metadata:
+      labels:
+        app: flagship
+    spec:
+      nodeSelector:
+        trading-node: worker    # Only schedule on the VX1 worker node
+      containers:
+        # Portfolio API — manages state, executes orders via IBKR
+        - name: flagship-api
+          image: sureshotcapital/flagship-api:latest
+          ports:
+            - containerPort: 8000
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://postgres:postgres@postgres:5432/flagship"
+            - name: IBKR_GATEWAY_URL
+              value: "https://ib-gateway-service:5000/v1/api"
+            - name: IBKR_GATEWAY_HTTP_URL
+              value: "https://ib-gateway-service:5000"
+            # Comma-separated strategy names — must match each strategy's STRATEGY_NAME constant
+            - name: PORTFOLIO_STRATEGIES
+              value: "Sidewinder,ClusterBarrage,SiegeEngine"
+            - name: IBKR_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: ib-credentials
+                  key: username
+            - name: IBKR_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ib-credentials
+                  key: password
+            - name: IBKR_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: ib-credentials
+                  key: otp_secret
+            - name: IBKR_ACCT_NUMBER
+              valueFrom:
+                secretKeyRef:
+                  name: ib-credentials
+                  key: account_number
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+
+        # DataFetcher service — shared Stagehand session pool for real-time price scraping
+        # Reuses the flagship-api image (already has stagehand + SureshotSDK installed)
+        - name: data-fetcher
+          image: sureshotcapital/flagship-api:latest
+          command: ["uvicorn", "SureshotSDK.DataFetcher.service:app", "--host", "0.0.0.0", "--port", "3100"]
+          ports:
+            - containerPort: 3100
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "300m"
+              memory: "512Mi"
+          env:
+            - name: DATAFETCHER_POOL_SIZE
+              value: "3"
+            - name: BROWSERBASE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: browserbase-credentials
+                  key: api_key
+            - name: BROWSERBASE_PROJECT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: browserbase-credentials
+                  key: project_id
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3100
+            initialDelaySeconds: 30
+            periodSeconds: 10
+
+        # Sidewinder — ORB on TQQQ; submits orders to flagship-api via localhost
+        - name: sidewinder
+          image: sureshotcapital/sidewinder:latest
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+          env:
+            - name: TRADING_MODE
+              value: "PAPER"
+            - name: API_URL
+              value: "http://localhost:8000"
+            - name: DATA_FETCHER_URL
+              value: "http://localhost:3100"
+
+        # ClusterBarrage — six staggered ORB legs on TQQQ, each with its own stop
+        - name: cluster-barrage
+          image: sureshotcapital/cluster-barrage:latest
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+          env:
+            - name: TRADING_MODE
+              value: "PAPER"
+            - name: API_URL
+              value: "http://localhost:8000"
+            - name: DATA_FETCHER_URL
+              value: "http://localhost:3100"
+
+        # SiegeEngine volatility-decay harvester — idles all day, runs one P&L check at 3:50pm ET
+        - name: siege-engine
+          image: sureshotcapital/flagship-siege-engine:latest
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+          env:
+            - name: TRADING_MODE
+              value: "PAPER"
+            - name: API_URL
+              value: "http://localhost:8000"
+            - name: DATA_FETCHER_URL
+              value: "http://localhost:3100"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: flagship-api
+  namespace: trading
+spec:
+  selector:
+    app: flagship
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000
+  type: ClusterIP

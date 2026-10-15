@@ -12,13 +12,13 @@ data/
 automation/.venv
 automation/__pycache__/
 
+*.egg-info/
+
 pypi_placeholder/dist/*
-pypi_placeholder/SureshotSDK.egg-info*
 
 k8s/vault/vault-keys.json
 k8s/vault/VERIFICATION_REPORT.md
 
-sureshot_automation.egg-info.example/
 
 strategies/
 

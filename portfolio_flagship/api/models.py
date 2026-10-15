@@ -1,0 +1,96 @@
+"""
+Database models for MultiStrategy Portfolio API
+SQLAlchemy ORM models for orders, positions, portfolio state, and capital allocation
+"""
+
+from sqlalchemy import Column, Integer, Float, String, DateTime, Boolean, JSON, Date
+from sqlalchemy.ext.declarative import declarative_base
+from datetime import datetime
+
+Base = declarative_base()
+
+
+class Order(Base):
+    """Order execution records"""
+    __tablename__ = "orders"
+
+    id = Column(Integer, primary_key=True, index=True)
+    strategy_name = Column(String, index=True, nullable=False)
+    symbol = Column(String, index=True, nullable=False)
+    order_type = Column(String, nullable=False)  # "BUY" or "SELL"
+    quantity = Column(Float, nullable=False)
+    price = Column(Float, nullable=True)
+    order_value = Column(Float, nullable=True)
+    conid = Column(Integer, nullable=True)
+    ibkr_order_id = Column(String, nullable=True)
+    status = Column(String, default="PENDING")
+    trading_mode = Column(String, default="PAPER")
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    execution_timestamp = Column(DateTime, nullable=True)
+    error_message = Column(String, nullable=True)
+    order_metadata = Column(JSON, nullable=True)
+
+
+class Position(Base):
+    """Current portfolio positions per strategy"""
+    __tablename__ = "positions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    strategy_name = Column(String, index=True, nullable=False)
+    symbol = Column(String, index=True, nullable=False)
+    quantity = Column(Float, nullable=False)
+    avg_price = Column(Float, nullable=False)
+    current_price = Column(Float, nullable=True)
+    market_value = Column(Float, nullable=True)
+    unrealized_pnl = Column(Float, nullable=True)
+    last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class PortfolioState(Base):
+    """Portfolio state snapshot per strategy"""
+    __tablename__ = "portfolio_state"
+
+    id = Column(Integer, primary_key=True, index=True)
+    strategy_name = Column(String, index=True, nullable=False, unique=True)
+    cash = Column(Float, nullable=False)
+    collateral = Column(Float, nullable=False, default=0.0) # Cash on margin to hold for short selling
+    allocated_capital = Column(Float, nullable=False)  # Capital allocated to this strategy
+    initial_cash = Column(Float, nullable=False)
+    total_value = Column(Float, nullable=False)
+    invested = Column(Boolean, default=False)
+    position_locked = Column(Boolean, default=False)  # True when strategy has open position
+    total_return = Column(Float, nullable=True)
+    total_return_pct = Column(Float, nullable=True)
+    completed_trade_date = Column(Date, nullable=True)
+    last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class AllocationHistory(Base):
+    """Track capital allocation changes over time"""
+    __tablename__ = "allocation_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    total_capital = Column(Float, nullable=False)
+    allocations = Column(JSON, nullable=False)  # {strategy_name: {allocated, score, locked}}
+    rebalance_reason = Column(String, nullable=True)
+
+class StrategyConfig(Base):
+    """LIVE vs PAPER config for each strategy"""
+    __tablename__ = "strategy_config"
+    strategy_name = Column(String,  primary_key=True, index=True, nullable=False, unique=True)
+    trading_mode = Column(String, default="PAPER", nullable=False)  # "PAPER" or "LIVE"
+    last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class StrategyModeHistory(Base):
+    """Audit trail of every LIVE/PAPER mode transition"""
+    __tablename__ = "strategy_mode_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    strategy_name = Column(String, index=True, nullable=False)
+    from_mode = Column(String, nullable=False)
+    to_mode = Column(String, nullable=False)
+    reason = Column(String, nullable=True)
+    triggered_by = Column(String, nullable=True)  # "manual" or "performance"
