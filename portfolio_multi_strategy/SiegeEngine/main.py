@@ -34,9 +34,9 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 
 STRATEGY_NAME = "SiegeEngine"
-LONG_SYMBOL = "GLDM"
-LEVERAGED_SYMBOL = "SHNY"
-LEVERAGE_ETF_FACTOR = 3
+LONG_SYMBOL = "USO"
+LEVERAGED_SYMBOL = "UCO"
+LEVERAGE_ETF_FACTOR = 2
 OPTIMIZATION_STOP_LOSS_PERCENT = 0.05
 TIMEFRAME = "1d"
 DAILY_CHECK_TIME = time(15, 50)  # ET — single daily P&L check, before the 4:00pm pod scale-down
