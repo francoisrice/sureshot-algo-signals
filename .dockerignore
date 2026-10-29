@@ -1,0 +1,16 @@
+.git
+.claude
+.venv
+venv
+data
+optimization_results
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.env*
+**/*.log
+**/*.db
+SureshotSDK/ibkr/logs
+SureshotSDK/build
+SureshotSDK/dist
+**/*.egg-info

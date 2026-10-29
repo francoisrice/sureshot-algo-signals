@@ -41,6 +41,7 @@
           - "--exclude=__pycache__/"
           - "--exclude=*.retry"
           - "--include=provision_worker.yml"
+          - "--include=provision_attempt.yml"
           - "--include=deprovision_worker.yml"
           - "--include=inventory/***"
           - "--include=group_vars/***"
@@ -98,9 +99,6 @@
 
     - name: Apply ib-gateway manifests
       command: microk8s kubectl apply -f /opt/trading/k8s/ib-gateway/
-
-    - name: Apply trading-app PVCs
-      command: microk8s kubectl apply -f /opt/trading/k8s/trading-app/pvc.yml
 
     - name: Apply postgres PVC and Deployment (runs on orchestrator, persists across worker restarts)
       command: microk8s kubectl apply -f /opt/trading/k8s/postgres/
