@@ -124,6 +124,10 @@ docker push sureshotcapital/multi-strategy-api:latest
 # ORB Aziz TQQQ strategy
 docker build -f portfolio_multi_strategy/ORB_Aziz_TQQQ/Dockerfile -t sureshotcapital/orb-aziz-tqqq:latest .
 docker push sureshotcapital/orb-aziz-tqqq:latest
+
+# ORB Hydra strategy
+docker build -f portfolio_multi_strategy/ORB_Hydra/Dockerfile -t sureshotcapital/orb-hydra:latest .
+docker push sureshotcapital/orb-hydra:latest
 ```
 
 #### 2. Create K8s secrets (run once on the orchestrator)
