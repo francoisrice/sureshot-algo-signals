@@ -32,7 +32,7 @@ dependencies = [
 
 [project.optional-dependencies]
 ibkr = ["playwright>=1.40.0", "pyotp>=2.8.0"]
-datafetcher = ["stagehand>=0.1.0", "fastapi>=0.104.0", "uvicorn[standard]>=0.24.0"]
+datafetcher = ["stagehand==3.22.0", "fastapi>=0.104.0", "uvicorn[standard]>=0.24.0"]
 vault = ["hvac>=1.2.0"]
 options = ["scipy>=1.11"]
 all = ["SureshotSDK[ibkr,datafetcher,vault,options]"]
