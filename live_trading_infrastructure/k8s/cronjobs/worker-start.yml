@@ -20,6 +20,7 @@ spec:
             command:
             - kubectl
             - scale
+            - deployment/data-fetcher
             - deployment/multistrategy-portfolio
             - --replicas=1
             - -n

@@ -109,5 +109,8 @@
     - name: Apply market-open/close CronJobs
       command: microk8s kubectl apply -f /opt/trading/k8s/cronjobs/
 
+    - name: Apply shared data-fetcher Deployment and Service (replicas=0, scaled by the market CronJobs)
+      command: microk8s kubectl apply -f /opt/trading/k8s/data_fetcher/
+
     - name: Apply multistrategy-portfolio deployment (replicas=0, no pods until market open)
       command: microk8s kubectl apply -f /opt/trading/k8s/multistrategy-portfolio.yaml

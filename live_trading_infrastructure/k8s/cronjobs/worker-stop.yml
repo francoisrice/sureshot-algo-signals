@@ -21,6 +21,7 @@ spec:
             - kubectl
             - scale
             - deployment/multistrategy-portfolio
+            - deployment/data-fetcher
             - --replicas=0
             - -n
             - trading

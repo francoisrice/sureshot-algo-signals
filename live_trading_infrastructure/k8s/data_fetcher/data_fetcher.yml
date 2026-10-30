@@ -1,0 +1,73 @@
+# Shared real-time price service for every portfolio. Strategies reach it at
+# http://data-fetcher:3100; bars are cached per ticker for DATAFETCHER_CACHE_TTL_SECONDS.
+# Scaled 0 -> 1 -> 0 by the market-open / market-close CronJobs alongside the portfolios.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: data-fetcher
+  namespace: trading
+spec:
+  replicas: 0
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: data-fetcher
+  template:
+    metadata:
+      labels:
+        app: data-fetcher
+    spec:
+      nodeSelector:
+        trading-node: worker
+      containers:
+        - name: data-fetcher
+          # Reuses the multi-strategy-api image (already has stagehand + SureshotSDK installed)
+          image: sureshotcapital/multi-strategy-api:latest
+          imagePullPolicy: Always
+          command: ["uvicorn", "SureshotSDK.DataFetcher.service:app", "--host", "0.0.0.0", "--port", "3100"]
+          ports:
+            - containerPort: 3100
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "300m"
+              memory: "512Mi"
+          env:
+            - name: DATAFETCHER_POOL_SIZE
+              value: "3"
+            - name: DATAFETCHER_CACHE_TTL_SECONDS
+              value: "60"
+            - name: BROWSERBASE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: browserbase-credentials
+                  key: api_key
+            - name: BROWSERBASE_PROJECT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: browserbase-credentials
+                  key: project_id
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3100
+            initialDelaySeconds: 30
+            periodSeconds: 10
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: data-fetcher
+  namespace: trading
+spec:
+  selector:
+    app: data-fetcher
+  ports:
+    - protocol: TCP
+      port: 3100
+      targetPort: 3100
+  type: ClusterIP

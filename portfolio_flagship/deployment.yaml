@@ -67,40 +67,6 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 5
 
-        # DataFetcher service — shared Stagehand session pool for real-time price scraping
-        # Reuses the flagship-api image (already has stagehand + SureshotSDK installed)
-        - name: data-fetcher
-          image: sureshotcapital/flagship-api:latest
-          command: ["uvicorn", "SureshotSDK.DataFetcher.service:app", "--host", "0.0.0.0", "--port", "3100"]
-          ports:
-            - containerPort: 3100
-          resources:
-            requests:
-              cpu: "100m"
-              memory: "256Mi"
-            limits:
-              cpu: "300m"
-              memory: "512Mi"
-          env:
-            - name: DATAFETCHER_POOL_SIZE
-              value: "3"
-            - name: BROWSERBASE_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: browserbase-credentials
-                  key: api_key
-            - name: BROWSERBASE_PROJECT_ID
-              valueFrom:
-                secretKeyRef:
-                  name: browserbase-credentials
-                  key: project_id
-          readinessProbe:
-            httpGet:
-              path: /health
-              port: 3100
-            initialDelaySeconds: 30
-            periodSeconds: 10
-
         # Sidewinder — ORB on TQQQ; submits orders to flagship-api via localhost
         - name: sidewinder
           image: sureshotcapital/sidewinder:latest
@@ -117,7 +83,7 @@ spec:
             - name: API_URL
               value: "http://localhost:8000"
             - name: DATA_FETCHER_URL
-              value: "http://localhost:3100"
+              value: "http://data-fetcher:3100"
 
         # ClusterBarrage — six staggered ORB legs on TQQQ, each with its own stop
         - name: cluster-barrage
@@ -135,7 +101,7 @@ spec:
             - name: API_URL
               value: "http://localhost:8000"
             - name: DATA_FETCHER_URL
-              value: "http://localhost:3100"
+              value: "http://data-fetcher:3100"
 
         # SiegeEngine volatility-decay harvester — idles all day, runs one P&L check at 3:50pm ET
         - name: siege-engine
@@ -153,7 +119,7 @@ spec:
             - name: API_URL
               value: "http://localhost:8000"
             - name: DATA_FETCHER_URL
-              value: "http://localhost:3100"
+              value: "http://data-fetcher:3100"
 
 ---
 apiVersion: v1
