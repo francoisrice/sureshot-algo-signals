@@ -279,9 +279,15 @@ Get invested status for a specific strategy.
 - `cash`: Current cash balance
 - `allocated_capital`: Capital allocated to this strategy (used by buy_all)
 - `initial_cash`: Starting capital
-- `total_value`: Cash + position values
+- `total_value`: Cash + the value of every open position. A long is `quantity × price`; a short is `|quantity| × (2 × avg_price − price)`, because opening a short sets its entry notional aside from `cash` and closing returns entry + P&L
+- `collateral`: Entry notional of open shorts (the cash set aside for them)
+- `total_return`: `total_value − initial_cash`
+- `total_return_pct`: `total_return / initial_cash × 100` — return on the strategy's own capital, so strategies rank on the same basis (`/config/rotate-live-strategies`, LIVE-promotion candidates)
 - `invested`: Whether strategy currently has positions
 - `position_locked`: Prevents rebalancing when true
+
+#### Per-position return (kept for later)
+Until 2026-10-30, `total_return_pct` divided cumulative P&L by the *last trade's* position cost. That made sense when every trade was 1 share/contract, but mixed bases once sizing varied. The per-position calculation lives on as `position_return_pct(pnl, positionCost)` in `api/orders.py`: the return on the capital one position tied up (for a 1-contract trade, P&L ÷ one contract's cost). It is not stored yet; use it for per-trade metrics, e.g. ranking strategies by return per contract independent of their capital.
 
 ### Order
 - `strategy_name`: Strategy that placed the order
