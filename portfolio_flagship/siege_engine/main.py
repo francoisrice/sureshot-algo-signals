@@ -34,14 +34,47 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 
 STRATEGY_NAME = "SiegeEngine"
-LONG_SYMBOL = "GLDM"
-LEVERAGED_SYMBOL = "SHNY"
-LEVERAGE_ETF_FACTOR = 3
+LONG_SYMBOL = "USO"
+LEVERAGED_SYMBOL = "UCO"
+LEVERAGE_ETF_FACTOR = 2
 OPTIMIZATION_STOP_LOSS_PERCENT = 0.05
 TIMEFRAME = "1d"
 DAILY_CHECK_TIME = time(15, 50)  # ET — single daily P&L check, before the 4:00pm pod scale-down
 
 # Trading mode
+HEDGE_ERROR_TIE_TOLERANCE = 0.005  # hedges within 0.5pp of the best count as equal; the larger one wins
+
+
+def best_hedged_share_counts(cash: float, price: float, leveragedPrice: float, factor: float) -> dict:
+    """
+    Whole-share sizing that keeps long notional closest to factor x short notional, which is what
+    cancels the leveraged ETF's beta. One pass over affordable short counts; for each, only the long
+    counts just below and above the target can be closest. Prefers more capital only among equally good hedges.
+    """
+    def sized_candidate(shortShares: int, longShares: int):
+        capitalUsed = longShares * price + shortShares * leveragedPrice
+        if longShares < 1 or capitalUsed > cash:
+            return None
+        targetLongNotional = factor * shortShares * leveragedPrice
+        hedgeError = abs(longShares * price - targetLongNotional) / targetLongNotional
+        return hedgeError, capitalUsed, longShares, shortShares
+
+    candidates = []
+    for shortShares in range(1, int(cash // leveragedPrice) + 1):
+        longSharesBelowTarget = int(factor * shortShares * leveragedPrice // price)
+        candidates.append(sized_candidate(shortShares, longSharesBelowTarget))
+        candidates.append(sized_candidate(shortShares, longSharesBelowTarget + 1))
+    candidates = [c for c in candidates if c is not None]
+
+    if not candidates:
+        return {"long": 0, "short": 0}
+
+    bestHedgeError = min(c[0] for c in candidates)
+    equallyGoodHedges = [c for c in candidates if c[0] <= bestHedgeError + HEDGE_ERROR_TIE_TOLERANCE]
+    _, _, longShares, shortShares = max(equallyGoodHedges, key=lambda c: c[1])
+    return {"long": longShares, "short": shortShares}
+
+
 TRADING_MODE = os.getenv("TRADING_MODE", "LIVE")
 
 # Portfolio API URL
@@ -203,11 +236,7 @@ class SiegeEngine(TradingStrategy):
             return {"long": 0, "short": 0}
 
         factor = getattr(self, 'leverageFactor', LEVERAGE_ETF_FACTOR)
-        shortCapital = cash / (factor + 1)
-        shortShares = int(shortCapital // leveragedPrice)
-        longShares = int((shortShares * leveragedPrice * factor) // price)
-
-        return {"long": longShares, "short": shortShares}
+        return best_hedged_share_counts(cash, price, leveragedPrice, factor)
 
     def combined_pnl(self, price: float, leveragedPrice: float) -> Optional[float]:
         if self.entryPrice is None or self.leveragedEntryPrice is None:

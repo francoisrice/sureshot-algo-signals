@@ -29,16 +29,34 @@ def get_trading_mode(strategy_name: str, db: Session) -> str:
     return "PAPER"
 
 
-def _update_portfolio_returns(portfolio, position_cost: float = None) -> None:
-    """Recompute total_return and total_return_pct.
-    Falls back to initial_cash when no position cost is available, effectively assuming a full portfolio trade.
-    """
+def _update_portfolio_returns(portfolio) -> None:
+    """total_return_pct is return on the strategy's initial capital, so strategies rank on the same basis."""
     portfolio.total_return = portfolio.total_value - portfolio.initial_cash
-    denom = position_cost if (position_cost and position_cost > 0) else portfolio.initial_cash
     portfolio.total_return_pct = (
-        (portfolio.total_return / denom * 100)
-        if denom > 0 else 0.0
+        (portfolio.total_return / portfolio.initial_cash * 100)
+        if portfolio.initial_cash > 0 else 0.0
     )
+
+
+def position_return_pct(pnl: float, positionCost: float) -> float:
+    """Return on the capital one position tied up (e.g. a 1-share / 1-contract trade). Not stored yet; see README."""
+    return (pnl / positionCost * 100) if positionCost > 0 else 0.0
+
+def _position_value(position) -> float:
+    """Longs are worth their market value; a short is worth the entry cash set aside for it plus its unrealized P&L."""
+    markPrice = position.current_price if position.current_price is not None else position.avg_price
+    if position.quantity >= 0:
+        return position.quantity * markPrice
+    return abs(position.quantity) * (2 * position.avg_price - markPrice)
+
+
+def _refresh_portfolio_totals(portfolio, db: Session) -> None:
+    """Recompute total_value and collateral from cash plus every open position the strategy holds."""
+    db.flush()
+    openPositions = db.query(Position).filter(Position.strategy_name == portfolio.strategy_name).all()
+    portfolio.total_value = portfolio.cash + sum(_position_value(p) for p in openPositions)
+    portfolio.collateral = sum(abs(p.quantity) * p.avg_price for p in openPositions if p.quantity < 0)
+
 
 def execute_paper_trade(order_type: str, symbol: str, quantity: float, price: float):
     """
@@ -378,7 +396,6 @@ async def buy_all(trade: TradeRequest, db: Session = Depends(get_db)):
         portfolio.cash -= total_cost
         portfolio.invested = True
         portfolio.position_locked = True  # Lock position so it won't be rebalanced
-        portfolio.total_value = portfolio.cash
 
         # Update or create position
         position = db.query(Position).filter(
@@ -405,8 +422,7 @@ async def buy_all(trade: TradeRequest, db: Session = Depends(get_db)):
             )
             db.add(position)
 
-        # Update total portfolio value
-        portfolio.total_value += position.market_value
+        _refresh_portfolio_totals(portfolio, db)
         _update_portfolio_returns(portfolio)
 
         db.commit()
@@ -458,6 +474,29 @@ async def sell_short_all(trade: TradeRequest, db: Session = Depends(get_db)):
                 detail=f"Portfolio not found for strategy {trade.strategy_name}. Create portfolio first."
             )
 
+        position = db.query(Position).filter(
+            Position.strategy_name == trade.strategy_name,
+            Position.symbol == trade.symbol
+        ).first()
+
+        if position and position.quantity > 0:
+            # Orphaned long: close it before any short order or cash change, so the
+            # strategy re-enters short cleanly on the next bar.
+            logger.warning(
+                f"sell_short_all: orphaned long ({position.quantity} {trade.symbol}) detected — "
+                f"closing it before allowing short entry"
+            )
+            await sell_all(TradeRequest(
+                strategy_name=trade.strategy_name,
+                symbol=trade.symbol,
+                price=trade.price,
+                quantity=None
+            ), db)
+            raise HTTPException(
+                status_code=409,
+                detail=f"Orphaned long position closed. Retry short on next bar."
+            )
+
         # IMPORTANT: Use allocated_capital (not total cash) to determine buying power
         # This ensures each strategy only uses their allocated portion
         # available_cash = min(portfolio.cash, portfolio.allocated_capital)
@@ -503,35 +542,9 @@ async def sell_short_all(trade: TradeRequest, db: Session = Depends(get_db)):
         db.add(order)
 
         # Update portfolio state
-        portfolio.collateral = portfolio.cash + total_cost
         portfolio.cash -= total_cost
         portfolio.invested = True
         portfolio.position_locked = True  # Lock position so it won't be rebalanced
-        portfolio.total_value = portfolio.cash
-
-        # Update or create position
-        position = db.query(Position).filter(
-            Position.strategy_name == trade.strategy_name,
-            Position.symbol == trade.symbol
-        ).first()
-
-        if position and position.quantity > 0:
-            # Orphaned long detected — close it so the strategy can re-enter short
-            # cleanly on the next bar. Don't open a short position now.
-            logger.warning(
-                f"sell_short_all: orphaned long ({position.quantity} {trade.symbol}) detected — "
-                f"closing it before allowing short entry"
-            )
-            await sell_all(TradeRequest(
-                strategy_name=trade.strategy_name,
-                symbol=trade.symbol,
-                price=trade.price,
-                quantity=None
-            ), db)
-            raise HTTPException(
-                status_code=409,
-                detail=f"Orphaned long position closed. Retry short on next bar."
-            )
 
         if position:
             # Add to existing short position
@@ -548,12 +561,11 @@ async def sell_short_all(trade: TradeRequest, db: Session = Depends(get_db)):
                 quantity=-shares_to_buy,
                 avg_price=trade.price,
                 current_price=trade.price,
-                market_value=total_cost
+                market_value=-total_cost
             )
             db.add(position)
 
-        # Update total portfolio value
-        portfolio.total_value += position.market_value
+        _refresh_portfolio_totals(portfolio, db)
         _update_portfolio_returns(portfolio)
 
         db.commit()
@@ -657,17 +669,13 @@ async def sell_all(trade: TradeRequest, db: Session = Depends(get_db)):
         db.add(order)
 
         # Update portfolio state — always clean up position regardless of IBKR outcome
-        position_cost = position.avg_price * shares_to_sell
         if trade_result["status"] != "FAILED":
             portfolio.cash += total_proceeds
-        portfolio.total_value = portfolio.cash
-        _update_portfolio_returns(portfolio, position_cost=position_cost)
 
         if remainingShares > 0:
             position.quantity = remainingShares
             position.current_price = trade.price
             position.market_value = remainingShares * trade.price
-            portfolio.total_value += position.market_value
         else:
             # Check if still invested in any positions (before deleting current position)
             remaining_positions = db.query(Position).filter(
@@ -677,6 +685,9 @@ async def sell_all(trade: TradeRequest, db: Session = Depends(get_db)):
             portfolio.invested = remaining_positions > 0
             portfolio.position_locked = remaining_positions > 0  # Unlock when all positions closed
             db.delete(position)
+
+        _refresh_portfolio_totals(portfolio, db)
+        _update_portfolio_returns(portfolio)
 
         db.commit()
         db.refresh(order)
@@ -774,16 +785,12 @@ async def close_short_all(trade: TradeRequest, db: Session = Depends(get_db)):
         entryValue = abs(position.avg_price * shares_to_sell)
         buybackCost = abs(shares_to_sell) * trade.price
         portfolio.cash += entryValue + (entryValue - buybackCost)
-        portfolio.total_value = portfolio.cash
-        _update_portfolio_returns(portfolio, position_cost=entryValue)
 
         if remainingShares < 0:
             position.quantity = remainingShares
             position.current_price = trade.price
             position.market_value = remainingShares * trade.price
-            portfolio.total_value += position.market_value
         else:
-            portfolio.collateral = 0
             # Check if still invested in any positions (before deleting current position)
             remaining_positions = db.query(Position).filter(
                 Position.strategy_name == trade.strategy_name,
@@ -792,6 +799,9 @@ async def close_short_all(trade: TradeRequest, db: Session = Depends(get_db)):
             portfolio.invested = remaining_positions > 0
             portfolio.position_locked = remaining_positions > 0  # Unlock when all positions closed
             db.delete(position)
+
+        _refresh_portfolio_totals(portfolio, db)
+        _update_portfolio_returns(portfolio)
 
         db.commit()
         db.refresh(order)

@@ -374,7 +374,7 @@ class Sidewinder(TradingStrategy):
 
                 position_size = self.calculate_position_size(price, self.opening_range_high)
 
-                if position_size != 0:
+                if position_size > 0:
                     self.entry_price = price
                     self.position_direction = 'SHORT'
                     self.take_profit_price = price - OPTIMIZATION_TAKE_PROFIT_FACTOR * (self.opening_range_high - price)

@@ -42,6 +42,7 @@ Backtests (2026-08-28, $100k initial, entry on first trading day, held to end):
 - Decay spread realized: SHNY fell 40.3% (to Aug 1) while GLDM fell 6.5% (3x would predict ~20%); PLTU fell 22.1% while PLTR rose 5.4% (2x would predict +10.7%). Profit ≈ spread × short-leg notional.
 - Both legs finished profitable on the Aug 28 runs — decay kept the leveraged short down through the underlying's rally.
 - Harvest is capped by the short leg's share of capital: cash-collateralized sizing puts 1/(factor+1) of capital in the short (25% at 3:1, 33% at 2:1), so return on total capital = spread × that fraction.
+- Whole-share sizing picks the share counts whose long notional is closest to factor × short notional (smallest hedge error), preferring more capital only among equally good hedges; at small capital this can leave cash unallocated (e.g. $1,000 with USO $167.66 / UCO $66.57 → long 3 / short 4, 5.5% error, $769 used).
 - PLTR/PLTU outperformed despite lower leverage: decay scales with volatility squared, and the 2:1 pair carries a larger short notional. Cost: ~2x the drawdown of the gold pair.
 - Stop-loss (5% of entry capital) never triggered on the gold or PLTR pairs. It fired once, on OILK/UCO (2026-03-12, -$5,593.70) — daily checks overshot the -$5,000 line by ~12%, but cut what would have been a -$12.4k hold-to-end loss.
 - USO/UCO survived oil's +88.5% rally (SPEC's stated worst case): UCO compounded to only +121.5% vs the +177% that 2x arithmetic predicts, so decay still won. Trend risk is real but chop can offset it.
